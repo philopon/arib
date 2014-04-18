@@ -1,6 +1,6 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Arib.String.Internal.Pipes where
+module Data.Arib.String.Internal.Pipes where
 
 import System.IO (Handle)
 import qualified Pipes as P

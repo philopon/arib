@@ -1,7 +1,7 @@
-module Arib.String.Internal.Debug where
+module Data.Arib.String.Internal.Debug where
 
 import Data.Word
-import Arib.String.Internal.Types
+import Data.Arib.String.Internal.Types
 import Numeric
 
 data DebugChar

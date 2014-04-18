@@ -2,7 +2,9 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleContexts #-}
-module Arib.String.Internal where
+{-# LANGUAGE CPP #-}
+
+module Data.Arib.String.Internal where
 
 import Pipes
 import Control.Monad.RWS.Strict
@@ -12,51 +14,52 @@ import Data.Bits
 import Data.Word
 import qualified Data.ByteString.Lazy as L
 
-import Arib.String.Internal.Pipes
-import Arib.String.Internal.Debug
-import Arib.String.Internal.Types
+import Data.Arib.String.Internal.Pipes
+import Data.Arib.String.Internal.Debug
+import Data.Arib.String.Internal.Types
+import Data.Arib.String.Internal.Common
 
 finToGSet1 :: Word8 -> Either Word8 (AribConfig a -> GSet1 a)
-finToGSet1 0x4A = Right eisuu
-finToGSet1 0x30 = Right hiragana
-finToGSet1 0x31 = Right katakana
-finToGSet1 0x32 = Right mosaicA
-finToGSet1 0x33 = Right mosaicB
-finToGSet1 0x34 = Right mosaicC
-finToGSet1 0x35 = Right mosaicD
-finToGSet1 0x36 = Right katakanaP
-finToGSet1 0x37 = Right hiraganaP
-finToGSet1 0x38 = Right katakanaP
-finToGSet1 0x49 = Right jisKatakana
+finToGSet1 0x4A = debug "eisuu <-" Right eisuu
+finToGSet1 0x30 = debug "hiragana <-" Right hiragana
+finToGSet1 0x31 = debug "katakana <-" Right katakana
+finToGSet1 0x32 = debug "mosaicA <-" Right mosaicA
+finToGSet1 0x33 = debug "mosaicB <-" Right mosaicB
+finToGSet1 0x34 = debug "mosaicC <-" Right mosaicC
+finToGSet1 0x35 = debug "mosaicD <-" Right mosaicD
+finToGSet1 0x36 = debug "katakanaP <-" Right katakanaP
+finToGSet1 0x37 = debug "hiraganaP <-" Right hiraganaP
+finToGSet1 0x38 = debug "katakanaP <-" Right katakanaP
+finToGSet1 0x49 = debug "jisKatakana <-" Right jisKatakana
 finToGSet1 w    = Left w
 
 finToGSet2 :: Word8 -> Either Word8 (AribConfig a -> GSet2 a)
-finToGSet2 0x42 = Right kanji
-finToGSet2 0x39 = Right jisKanji1
-finToGSet2 0x3A = Right jisKanji2
-finToGSet2 0x3B = Right additional
+finToGSet2 0x42 = debug "kanji <-"      Right kanji
+finToGSet2 0x39 = debug "jisKanji1 <-"  Right jisKanji1
+finToGSet2 0x3A = debug "jisKanji2 <-"  Right jisKanji2
+finToGSet2 0x3B = debug "additional <-" Right additional
 finToGSet2 w    = Left w
 
 finToDRCS2 :: Word8 -> Either Word8 (AribConfig a -> DRCS2 a)
-finToDRCS2 0x40 = Right drcs0
+finToDRCS2 0x40 = debug "DRCS0 <-" Right drcs0
 finToDRCS2 w    = Left w
 
 finToDRCS1 :: Word8 -> Either Word8 (AribConfig a -> DRCS1 a)
-finToDRCS1 0x41 = Right drcs1
-finToDRCS1 0x42 = Right drcs2
-finToDRCS1 0x43 = Right drcs3
-finToDRCS1 0x44 = Right drcs4
-finToDRCS1 0x45 = Right drcs5
-finToDRCS1 0x46 = Right drcs6
-finToDRCS1 0x47 = Right drcs7
-finToDRCS1 0x48 = Right drcs8
-finToDRCS1 0x49 = Right drcs9
-finToDRCS1 0x4A = Right drcs10
-finToDRCS1 0x4B = Right drcs11
-finToDRCS1 0x4C = Right drcs12
-finToDRCS1 0x4D = Right drcs13
-finToDRCS1 0x4E = Right drcs14
-finToDRCS1 0x4F = Right drcs15
+finToDRCS1 0x41 = debug "DRCS1 <-" Right drcs1
+finToDRCS1 0x42 = debug "DRCS2 <-" Right drcs2
+finToDRCS1 0x43 = debug "DRCS3 <-" Right drcs3
+finToDRCS1 0x44 = debug "DRCS4 <-" Right drcs4
+finToDRCS1 0x45 = debug "DRCS5 <-" Right drcs5
+finToDRCS1 0x46 = debug "DRCS6 <-" Right drcs6
+finToDRCS1 0x47 = debug "DRCS7 <-" Right drcs7
+finToDRCS1 0x48 = debug "DRCS8 <-" Right drcs8
+finToDRCS1 0x49 = debug "DRCS9 <-" Right drcs9
+finToDRCS1 0x4A = debug "DRCS10 <-" Right drcs10
+finToDRCS1 0x4B = debug "DRCS11 <-" Right drcs11
+finToDRCS1 0x4C = debug "DRCS12 <-" Right drcs12
+finToDRCS1 0x4D = debug "DRCS13 <-" Right drcs13
+finToDRCS1 0x4E = debug "DRCS14 <-" Right drcs14
+finToDRCS1 0x4F = debug "DRCS15 <-" Right drcs15
 finToDRCS1 w    = Left w
 
 awaitGSet1, awaitGSet2, awaitDRCS1, awaitDRCS2
@@ -79,11 +82,11 @@ processEscape' ws _    _     w    = throwError . UnknownEscapeSequence $ ws ++ [
 
 processEscape :: (MonadState (AribState a) m, MonadReader (AribConfig a) m, MonadError AribException m)
               => Word8 -> Consumer' Word8 m ()
-processEscape 0x6E = modify $ glTo g2 -- LS2
-processEscape 0x6F = modify $ glTo g3 -- LS3
-processEscape 0x7E = modify $ grTo g1 -- LS1R
-processEscape 0x7D = modify $ grTo g2 -- LS2R
-processEscape 0x7C = modify $ grTo g3 -- LS3R
+processEscape 0x6E = debug "LS2"  modify $ glTo g2 -- LS2
+processEscape 0x6F = debug "LS3"  modify $ glTo g3 -- LS3
+processEscape 0x7E = debug "LS1R" modify $ grTo g1 -- LS1R
+processEscape 0x7D = debug "LS2R" modify $ grTo g2 -- LS2R
+processEscape 0x7C = debug "LS3R" modify $ grTo g3 -- LS3R
 
 processEscape 0x28 = awaitGSet1 >>= either (processEscape' [0x28] awaitDRCS1 g0To) (modify . g0To)
 processEscape 0x29 = awaitGSet1 >>= either (processEscape' [0x29] awaitDRCS1 g1To) (modify . g1To)

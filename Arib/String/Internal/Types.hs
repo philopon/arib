@@ -1,7 +1,8 @@
-module Arib.String.Internal.Types where
+module Data.Arib.String.Internal.Types where
 
 import Data.Word
 import Data.Map.Strict
+import Data.Arib.String.Internal.Common
 
 data GetChar a 
     = GetChar1 (Word8 -> a)
@@ -64,10 +65,10 @@ glTo c s = s { getGl = c }
 grTo c s = s { getGr = c }
 
 g0To, g1To, g2To, g3To :: GetChar a -> AribState a -> AribState a
-g0To g s = s { g0 = g }
-g1To g s = s { g1 = g }
-g2To g s = s { g2 = g }
-g3To g s = s { g3 = g }
+g0To g s = debug "  G0 ->" s { g0 = g }
+g1To g s = debug "  G1 ->" s { g1 = g }
+g2To g s = debug "  G2 ->" s { g2 = g }
+g3To g s = debug "  G3 ->" s { g3 = g }
 
 gl, gr :: AribState a -> GetChar a
 gl st = getGl st st
