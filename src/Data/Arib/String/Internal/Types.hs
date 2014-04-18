@@ -7,6 +7,7 @@ import Data.Arib.String.Internal.Common
 data GetChar a 
     = GetChar1 (Word8 -> a)
     | GetChar2 (Word8 -> Word8 -> a)
+    | Macro
 
 type GSet1 a = Word8 -> a
 type GSet2 a = Word8 -> Word8 -> a
@@ -46,7 +47,7 @@ data AribConfig a
         , drcs13      :: DRCS1 a
         , drcs14      :: DRCS1 a
         , drcs15      :: DRCS1 a
-        , macro       :: DRCS1 a
+        , control     :: Control -> Word8 -> [Word8] -> a
         }
 
 data AribState a
@@ -126,57 +127,13 @@ defaultMacro = fromList
     f23 = 0x4D
     f24 = 0x4E
 
-
-
-
 initialState :: AribConfig a -> AribState a
 initialState c =
     AribState g0 g2 
     (GetChar2 $ kanji c) (GetChar1 $ eisuu c)
-    (GetChar1 $ hiragana c) (GetChar1 $ macro c) defaultMacro
+    (GetChar1 $ hiragana c) Macro defaultMacro
 
 data Control
-    = NUL
-    | BEL
-    | APB
-    | APF
-    | APD
-    | APU
-    | CS
-    | APR
-    | PAPF Word8
-    | CAN
-    | APS Word8 Word8
-    | RS
-    | US
-    | SP
-
-    | DEL
-    | BKF
-    | GRF
-    | YLF
-    | BLF
-    | MGF
-    | CNF
-    | WHF
-    | SSZ
-    | MSZ
-    | NSZ
-    | SZX Word8
-    | COL Word8 (Maybe Word8)
-    | FLC Word8
-    | CDC Word8 (Maybe Word8)
-    | POL Word8
-    | WMM Word8
-    | HLC Word8
-    | RPC Word8
-    | SPL
-    | STL
-    | CSI Word8 [Word8]
-    | TIME Word8 Word8
-    | C10_0
-    | C15_15
-    deriving (Show, Eq)
-
-
--- MACRO 0x40 MC body MACRO 0x4F
+    = Control
+    | CSI
+    deriving Show
