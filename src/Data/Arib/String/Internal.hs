@@ -12,6 +12,7 @@ import Control.Applicative
 import Control.Monad.RWS.Strict
 import Control.Monad.Error
 
+import Numeric
 import Data.Bits
 import Data.Word
 import qualified Data.ByteString.Lazy as L
@@ -92,17 +93,17 @@ processEscape 0x7E = debug "LS1R" modify $ grTo g1 -- LS1R
 processEscape 0x7D = debug "LS2R" modify $ grTo g2 -- LS2R
 processEscape 0x7C = debug "LS3R" modify $ grTo g3 -- LS3R
 
-processEscape 0x28 = awaitGSet1 >>= either (processEscape' [0x28] awaitDRCS1 g0To) (modify . g0To)
-processEscape 0x29 = awaitGSet1 >>= either (processEscape' [0x29] awaitDRCS1 g1To) (modify . g1To)
-processEscape 0x2A = awaitGSet1 >>= either (processEscape' [0x2A] awaitDRCS1 g2To) (modify . g2To)
-processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3To) (modify . g3To)
+processEscape 0x28 = awaitGSet1 >>= either (processEscape' [0x28] awaitDRCS1 g0To) (debug "G0 ->" modify . g0To)
+processEscape 0x29 = awaitGSet1 >>= either (processEscape' [0x29] awaitDRCS1 g1To) (debug "G1 ->" modify . g1To)
+processEscape 0x2A = awaitGSet1 >>= either (processEscape' [0x2A] awaitDRCS1 g2To) (debug "G2 ->" modify . g2To)
+processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3To) (debug "G3 ->" modify . g3To)
 
-processEscape 0x24 = awaitGSet2 >>= either notG0Process (modify . g0To)
+processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify . g0To)
   where
     notG0Process 0x28 = await      >>= processEscape' [0x24,0x28] awaitDRCS2 g0To
-    notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (modify . g1To)
-    notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (modify . g2To)
-    notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (modify . g3To)
+    notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (debug "G1 -> " modify . g1To)
+    notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (debug "G2 -> " modify . g2To)
+    notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (debug "G3 -> " modify . g3To)
     notG0Process w    = throwError $ UnknownEscapeSequence [0x24,w]
 
 processEscape w = throwError $ UnknownEscapeSequence [w]
@@ -114,8 +115,8 @@ applyGetChar ptr w = gets ptr >>= \case
     GetChar1 f -> tell (f $ clearBit w 7)
     GetChar2 f -> await >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
     Macro      -> do
-        macro <- maybe [] id . M.lookup w <$> gets macros
-        mapM_ yield macro >-> process
+        macro <- maybe [] id . M.lookup (clearBit w 7) <$> gets macros
+        debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro))  mapM_ yield macro >-> forever process
 
 localState :: MonadState s m => (s -> s) -> m a -> m a
 localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
@@ -154,16 +155,20 @@ process = await >>= \case
 
 -- http://www35.atwiki.jp/tvrock/m/pages/26.html
 mito :: L.ByteString
-mito = L.pack 
+mito = L.pack $ 0x1B : 0x2B : 0x31 : -- G3 -> Katakana
     [ 0x1B, 0x7C, 0xC9, 0xE9, 0xDE, 0xA2, 0xF3, 0xB3, 0x21, 0x3C
     , 0xEB, 0x21, 0x56, 0x3F, 0x65, 0x38, 0x4D, 0x32, 0x2B, 0x4C
     , 0x67, 0x21, 0x21, 0x42, 0x68, 0x1B, 0x7E, 0xB7, 0x49, 0x74
     , 0x21, 0x57, 0x1B, 0x24, 0x2A, 0x3B, 0x1B, 0x7D, 0xFA, 0xEA
     ] 
 
+macroCall :: L.ByteString
+macroCall = L.pack $
+    0x1B : 0x7C : -- LS3R
+    0xE0 : []     -- Macro 0x60
+
 doTest :: L.ByteString -> Either AribException [DebugChar]
 doTest str =
     fmap snd . runEffect $
-    evalRWSP debugConfig ((initialState debugConfig) { g3 = GetChar1 $ katakana debugConfig})
-    (fromLazy str >-> forever process)
+    evalRWSP debugConfig (initialState debugConfig) (fromLazy str >-> forever process)
 
