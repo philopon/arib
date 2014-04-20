@@ -8,5 +8,3 @@ debug = Debug.Trace.trace
 debug _ = id
 #endif
 debug :: String -> a -> a
-
-
