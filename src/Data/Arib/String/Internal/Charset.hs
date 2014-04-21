@@ -7,7 +7,7 @@ import qualified Data.ByteString as S
 import Data.Arib.String.Internal.TH
 
 kanji :: Dict
-kanji = $(mkCharsetFunction "/Users/philopon/mysrc/Haskell/arib/data/Kanji.txt")
+kanji = $(mkCharsetFunction "data/Kanji.txt")
 
 pickDict :: Dict -> Int -> S.ByteString
 pickDict (Dict elen b) i =

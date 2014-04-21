@@ -3,3 +3,4 @@
 *.dyn_o
 *.hi
 *.o
+dist
