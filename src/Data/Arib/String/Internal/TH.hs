@@ -11,15 +11,15 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
 import qualified Data.ByteString as S
 
-splitBy :: (a -> Bool) -> [a] -> [[a]]
-splitBy sep list = case break sep list of
+splitOn :: (a -> Bool) -> [a] -> [[a]]
+splitOn sep list = case break sep list of
     (bf, []) -> [bf]
-    (bf, af) -> bf : splitBy sep (tail af)
+    (bf, af) -> bf : splitOn sep (tail af)
 
 readCharset :: String -> IM.IntMap T.Text
 readCharset = IM.fromList . map readDatum . lines
   where
-    readDatum str = let k:v = map readField $ splitBy (== '\t') str
+    readDatum str = let k:v = map readField $ splitOn (== '\t') str
                         in (k, T.pack $ map toEnum v)
     readField s = case readHex s of
         [(v,[])] -> v

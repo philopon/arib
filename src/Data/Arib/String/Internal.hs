@@ -19,7 +19,7 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 
-import Data.Arib.String.Internal.Pipes
+import Data.Arib.Pipes
 import Data.Arib.String.Internal.Debug
 import Data.Arib.String.Internal.Types
 import Data.Arib.String.Internal.Common
