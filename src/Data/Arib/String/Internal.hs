@@ -16,12 +16,14 @@ import Numeric
 import Data.Bits
 import Data.Word
 import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 
 import Data.Arib.String.Internal.Pipes
 import Data.Arib.String.Internal.Debug
 import Data.Arib.String.Internal.Types
 import Data.Arib.String.Internal.Common
+import Data.Arib.String.Internal.Charset
 
 finToGSet1 :: AribConfig a -> Word8 -> Either Word8 (GetChar a)
 finToGSet1 c 0x4A = debug "eisuu <-" Right (GetChar1 $ eisuu c)
@@ -167,8 +169,12 @@ macroCall = L.pack $
     0x1B : 0x7C : -- LS3R
     0xE0 : []     -- Macro 0x60
 
-doTest :: L.ByteString -> Either AribException [DebugChar]
-doTest str =
+testDebugChar :: L.ByteString -> Either AribException [DebugChar]
+testDebugChar str =
     fmap snd . runEffect $
     evalRWSP debugConfig (initialState debugConfig) (fromLazy str >-> forever process)
 
+testByteString :: L.ByteString -> Either AribException L.ByteString
+testByteString str =
+    fmap (B.toLazyByteString . snd) . runEffect $
+    evalRWSP utf8Config (initialState utf8Config) (fromLazy str >-> forever process)

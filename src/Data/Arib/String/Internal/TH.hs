@@ -9,10 +9,7 @@ import Language.Haskell.TH
 import Control.Applicative
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import qualified Data.ByteString as S
-import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.Char8 as LC
 
 splitBy :: (a -> Bool) -> [a] -> [[a]]
 splitBy sep list = case break sep list of
@@ -33,15 +30,27 @@ data Dict =
          , body       :: {-#UNPACK#-}!S.ByteString
          } deriving Show
 
-mkCharsetFunction :: FilePath -> ExpQ
-mkCharsetFunction file = do
-    dict <- runIO $ IM.map T.encodeUtf8 . readCharset <$> readFile file
-    let maxLen = maximum . map (S.length . snd) $ IM.toList dict
-        bdy    = foldl (\acc (sec,point) -> case IM.lookup (0x100 * (sec + 0x21) + (point + 0x21)) dict of
-            Nothing -> acc `L.append` pad (maxLen + 1)
-            Just t  -> let l = S.length t
-                       in acc `L.append` (fromIntegral l `L.cons` L.fromStrict t `L.append` pad (maxLen - l))
-            ) L.empty [(sec, point) | sec <- [0..93], point <- [0..93]]
-    [|Dict $(litE . integerL . fromIntegral $ maxLen + 1) $(stringE $ LC.unpack bdy) |]
-  where pad l = L.replicate (fromIntegral l) 0
+mkCharset1 :: (T.Text -> String) -> FilePath -> ExpQ
+mkCharset1 conv file = do
+    dict <- runIO $ IM.map conv . readCharset <$> readFile file
+    let maxLen = maximum . map (length . snd) $ IM.toList dict
+        bdy    = foldr (\point b -> case IM.lookup point dict of
+            Nothing -> pad (maxLen + 1) ++ b
+            Just t  -> let l = length t
+                       in (toEnum l : t ++ pad (maxLen - l)) ++ b
+            ) [] [0x21 .. 0x7E]
+    [|Dict $(litE . integerL . fromIntegral $ maxLen + 1) $(stringE bdy) |]
+  where pad l = replicate (fromIntegral l) '\0'
+
+mkCharset2 :: (T.Text -> String) -> FilePath -> ExpQ
+mkCharset2 conv file = do
+    dict <- runIO $ IM.map conv . readCharset <$> readFile file
+    let maxLen = maximum . map (length . snd) $ IM.toList dict
+        bdy    = foldr (\(sec,point) b -> case IM.lookup (0x100 * sec + point) dict of
+            Nothing -> pad (maxLen + 1) ++ b
+            Just t  -> let l = length t
+                       in (toEnum l : t ++ pad (maxLen - l)) ++ b
+            ) [] [(sec, point) | sec <- [0x21 .. 0x7E], point <- [0x21 .. 0x7E]]
+    [|Dict $(litE . integerL . fromIntegral $ maxLen + 1) $(stringE bdy) |]
+  where pad l = replicate (fromIntegral l) '\0'
 
