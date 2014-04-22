@@ -22,6 +22,8 @@ library
                      , Data.Arib.String.Internal.Debug
                      , Data.Arib.String.Internal.TH
                      , Data.Arib.String.Internal.Types
+
+                     , Data.Arib.TS.Internal
   -- other-modules:       
   other-extensions:    LambdaCase
                      , Rank2Types
@@ -38,6 +40,7 @@ library
                      , text             >=1.1  && <1.2
                      , conduit          >=1.1  && <1.2
                      , conduit-extra    >=1.1  && <1.2
+                     , resourcet        >=1.1  && <1.2
   hs-source-dirs:      src
   ghc-options:         -Wall -O2
   default-language:    Haskell2010
