@@ -6,8 +6,6 @@
 
 module Data.Arib.String.Internal where
 
-import Pipes
-import Pipes.Lift
 import Control.Applicative
 import Control.Monad.RWS.Strict
 import Control.Monad.Error
@@ -15,12 +13,14 @@ import Control.Monad.Error
 import Numeric
 import Data.Bits
 import Data.Word
+import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 
-import Data.Arib.Pipes
-import Data.Arib.String.Internal.Debug
+import Data.Conduit
+import qualified Data.Conduit.Binary as CB
+
 import Data.Arib.String.Internal.Types
 import Data.Arib.String.Internal.Common
 import Data.Arib.String.Internal.Charset
@@ -69,16 +69,23 @@ finToDRCS1 c 0x4F = debug "DRCS15 <-" Right (GetChar1 $ drcs15 c)
 finToDRCS1 _ 0x70 = debug "MACRO <-" Right Macro
 finToDRCS1 _ w    = Left w
 
-awaitGSet1, awaitGSet2, awaitDRCS1, awaitDRCS2
-    :: MonadReader (AribConfig a) m => Consumer' Word8 m (Either Word8 (GetChar a))
-awaitGSet1 = finToGSet1 <$> ask <*> await
-awaitGSet2 = finToGSet2 <$> ask <*> await
+await_ :: MonadError AribException m => Sink S.ByteString m Word8
+await_ = CB.head >>= \case
+    Nothing -> throwError IllegalEndOfInput
+    Just a  -> return a
 
-awaitDRCS1 = finToDRCS1 <$> ask <*> await
-awaitDRCS2 = finToDRCS2 <$> ask <*> await
+awaitGSet1, awaitGSet2, awaitDRCS1, awaitDRCS2
+    :: (MonadReader (AribConfig a) m, MonadError AribException m) => Sink S.ByteString m (Either Word8 (GetChar a))
+awaitGSet1 = finToGSet1 <$> ask <*> await_
+awaitGSet2 = finToGSet2 <$> ask <*> await_
+
+awaitDRCS1 = finToDRCS1 <$> ask <*> await_
+awaitDRCS2 = finToDRCS2 <$> ask <*> await_
 
 data AribException
     = UnknownEscapeSequence [Word8]
+    | IllegalEndOfInput
+    | WantInput String
     deriving Show
 
 processEscape' :: (MonadError AribException m, MonadState s m) 
@@ -88,7 +95,7 @@ processEscape' ws awit field 0x20 = awit >>=
 processEscape' ws _    _     w    = throwError . UnknownEscapeSequence $ ws ++ [w]
 
 processEscape :: (MonadState (AribState a) m, MonadReader (AribConfig a) m, MonadError AribException m)
-              => Word8 -> Consumer' Word8 m ()
+              => Word8 -> Sink S.ByteString m ()
 processEscape 0x6E = debug "LS2"  modify $ glTo g2 -- LS2
 processEscape 0x6F = debug "LS3"  modify $ glTo g3 -- LS3
 processEscape 0x7E = debug "LS1R" modify $ grTo g1 -- LS1R
@@ -102,7 +109,7 @@ processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3T
 
 processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify . g0To)
   where
-    notG0Process 0x28 = await      >>= processEscape' [0x24,0x28] awaitDRCS2 g0To
+    notG0Process 0x28 = await_     >>= processEscape' [0x24,0x28] awaitDRCS2 g0To
     notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (debug "G1 -> " modify . g1To)
     notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (debug "G2 -> " modify . g2To)
     notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (debug "G3 -> " modify . g3To)
@@ -112,13 +119,13 @@ processEscape w = throwError $ UnknownEscapeSequence [w]
 
 applyGetChar :: ( MonadState (AribState a) m, MonadError AribException m
                 , MonadReader (AribConfig a) m, MonadWriter a m)
-             => (AribState a -> GetChar a) -> Word8 -> Consumer' Word8 m ()
+             => (AribState a -> GetChar a) -> Word8 -> Sink S.ByteString m ()
 applyGetChar ptr w = gets ptr >>= \case
     GetChar1 f -> tell (f $ clearBit w 7)
-    GetChar2 f -> await >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
+    GetChar2 f -> await_ >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
     Macro      -> do
-        macro <- maybe [] id . M.lookup (clearBit w 7) <$> gets macros
-        debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro))  mapM_ yield macro >-> forever process
+        macro <- maybe L.empty id . M.lookup (clearBit w 7) <$> gets macros
+        debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro)) CB.sourceLbs macro $$ process
 
 localState :: MonadState s m => (s -> s) -> m a -> m a
 localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
@@ -127,17 +134,17 @@ localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
 -- TODO: Macro, CSI
 processC :: ( MonadState (AribState a) m, MonadReader (AribConfig a) m
             , MonadError AribException m, MonadWriter a m) 
-         => Word8 -> Consumer' Word8 m ()
-processC 0x0F = modify (glTo g0) >> process        -- LS0
-processC 0x0E = modify (glTo g1) >> process        -- LS1
-processC 0x1B = await >>= processEscape >> process -- ESC
-processC 0x19 = localState (glTo g2) process       -- SS2
-processC 0x1D = localState (glTo g3) process       -- SS3
+         => Word8 -> Sink S.ByteString m ()
+processC 0x0F = modify (glTo g0) >> process         -- LS0
+processC 0x0E = modify (glTo g1) >> process         -- LS1
+processC 0x1B = await_ >>= processEscape >> process -- ESC
+processC 0x19 = localState (glTo g2) process        -- SS2
+processC 0x1D = localState (glTo g3) process        -- SS3
 processC w
-    | w `elem` just1  = asks control <*> pure Control <*> pure w <*> ((:[]) <$> await) >>= tell
-    | w `elem` just2  = asks control <*> pure Control <*> pure w <*> ((\a b -> [a,b]) <$> await <*> await) >>= tell
-    | w `elem` oneOr2 = await >>= \case
-        0x20 -> asks control <*> pure Control <*> pure w <*> ((:[]) <$> await) >>= tell
+    | w `elem` just1  = asks control <*> pure Control <*> pure w <*> ((:[]) <$> await_) >>= tell
+    | w `elem` just2  = asks control <*> pure Control <*> pure w <*> (L.unpack <$> CB.take 2) >>= tell
+    | w `elem` oneOr2 = await_ >>= \case
+        0x20 -> asks control <*> pure Control <*> pure w <*> ((:[]) <$> await_) >>= tell
         c    -> asks control <*> pure Control <*> pure w <*> pure [c] >>= tell
     | otherwise       = asks control <*> pure Control <*> pure w <*> pure [] >>= tell
   where
@@ -145,15 +152,19 @@ processC w
     just1  = [0x16,0x8B,0x91,0x93,0x94,0x97,0x98]
     just2  = [0x1C,0x9D] -- APS TIME
 
-process :: ( MonadError AribException m, MonadReader (AribConfig a) m
-           , MonadState (AribState a) m, MonadWriter a m) => Consumer' Word8 m ()
-process = await >>= \case
-    0xFF -> processC 0xFF
-    w |              w < 0x21 -> processC w
-      | 0x21 <= w && w < 0x7F -> applyGetChar gl w
-      | 0x7F <= w && w < 0xA1 -> processC w
-      | 0xA1 <= w             -> applyGetChar gr w
-    _ -> error "process: internal error."
+process' :: ( MonadError AribException m, MonadReader (AribConfig a) m
+            , MonadState (AribState a) m, MonadWriter a m) => Word8 -> Sink S.ByteString m ()
+process' 0xFF = processC 0xFF
+process' w |              w < 0x21 = processC w
+           | 0x21 <= w && w < 0x7F = applyGetChar gl w
+           | 0x7F <= w && w < 0xA1 = processC w
+           | otherwise             = applyGetChar gr w
+
+process :: ( MonadState (AribState a) m, MonadReader (AribConfig a) m
+           , MonadError AribException m, MonadWriter a m) => Sink S.ByteString m ()
+process = CB.head >>= \case
+    Nothing -> return ()
+    Just a  -> process' a >> process
 
 -- http://www35.atwiki.jp/tvrock/m/pages/26.html
 mito :: L.ByteString
@@ -169,12 +180,7 @@ macroCall = L.pack $
     0x1B : 0x7C : -- LS3R
     0xE0 : []     -- Macro 0x60
 
-testDebugChar :: L.ByteString -> Either AribException [DebugChar]
-testDebugChar str =
-    fmap snd . runEffect $
-    evalRWSP debugConfig (initialState debugConfig) (fromLazy str >-> forever process)
-
-testByteString :: L.ByteString -> Either AribException L.ByteString
-testByteString str =
-    fmap (B.toLazyByteString . snd) . runEffect $
-    evalRWSP utf8Config (initialState utf8Config) (fromLazy str >-> forever process)
+testUtf8 :: L.ByteString -> Either AribException L.ByteString
+testUtf8 str = 
+    fmap (B.toLazyByteString . snd) $
+    evalRWST (CB.sourceLbs str $$ process) utf8Config (initialState utf8Config)
