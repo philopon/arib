@@ -7,6 +7,7 @@
 -- module Data.Arib.TS.Internal where
 
 import Control.Monad
+import Control.Monad.Trans
 import Control.Exception
 import Control.Applicative
 import Control.Monad.Trans.Resource
@@ -21,6 +22,7 @@ import qualified Data.IntMap.Strict as IM
 import Data.Typeable(Typeable)
 
 import Data.Conduit
+import Numeric
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List   as CL
 
@@ -29,27 +31,49 @@ data TS =
        , header2 :: {-#UNPACK#-}!Word8
        , header3 :: {-#UNPACK#-}!Word8
        , payload :: {-#UNPACK#-}!S.ByteString
-       } deriving Show
+       }
 
-transportErrorIndicator, payloadUnitStartIndicator, transportPriority :: TS -> Bool
-transportErrorIndicator   TS{header1}  = testBit header1 7
-payloadUnitStartIndicator TS{header1}  = testBit header1 6
-transportPriority         TS{header1}  = testBit header1 5
+instance Show TS where
+    show ts@TS{payload} =
+        "TS {transportErrorIndicator = "  ++ show (transportErrorIndicator ts) ++
+        ", payloadUnitStartIndicator = "  ++ show (payloadUnitStartIndicator ts) ++
+        ", transportPriority = "          ++ show (transportPriority ts) ++
+        ", programId = 0x"                ++ showHex (programId ts)
+        ", transportScramblingControl = " ++ show (transportScramblingControl ts) ++
+        ", adaptationFieldControl = "     ++ show (adaptationFieldControl ts) ++
+        ", continuityCounter = 0x"        ++ showHex (continuityCounter ts)
+--        ", payload = "                    ++ show payload ++
+        "}"
+
+transportErrorIndicator, payloadUnitStartIndicator, transportPriority,
+    hasAdaptationField, hasPayload :: TS -> Bool
+transportErrorIndicator   TS{header1} = testBit header1 7
+payloadUnitStartIndicator TS{header1} = testBit header1 6
+transportPriority         TS{header1} = testBit header1 5
+hasAdaptationField        TS{header3} = testBit header3 5
+hasPayload                TS{header3} = testBit header3 4
+
 programId :: TS -> Int
 programId TS{header1, header2} =
-    shiftL (fromIntegral $ header1 .&. 0x1F) 8 .&. fromIntegral header2
+    shiftL (fromIntegral $ header1 .&. 0x1F) 8 .|. fromIntegral header2
+
 transportScramblingControl, adaptationFieldControl, continuityCounter :: TS -> Word8
 transportScramblingControl TS{header3} = shiftR header3 6
 adaptationFieldControl     TS{header3} = shiftR header3 4 .&. 0x3
 continuityCounter          TS{header3} = header3 .&. 0xF
+
+isNextOf :: Word8 -> Word8 -> Bool
+0x0 `isNextOf` 0xf = True
+0x0 `isNextOf` _   = False
+a   `isNextOf` b   = succ b == a
 
 data TsException
     = ReSyncFailed
     deriving (Show,Typeable)
 instance Exception TsException
 
-ts :: MonadThrow m => Int -> Conduit S.ByteString m TS
-ts n = go S.empty
+tsPacket :: MonadThrow m => Int -> Conduit S.ByteString m TS
+tsPacket n = go S.empty
   where
     n64 :: Int64
     n64 = fromIntegral n
@@ -104,6 +128,5 @@ detectPacketSize = CL.peek >>= \case
 
 main :: IO ()
 main = do
-    a <- runResourceT $ CB.sourceFile "../test.ts" $$ ts 188 =$ CL.fold (\a _ -> a + 1) (0::Int)
-    print a
+    runResourceT $ CB.sourceFile "../test.ts" $$ tsPacket 188 =$ CL.isolate 500 =$ CL.mapM_ (liftIO . print)
 
