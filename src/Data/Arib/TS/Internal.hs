@@ -1,13 +1,11 @@
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE LambdaCase #-}
--- module Data.Arib.TS.Internal where
+{-# LANGUAGE DeriveFunctor #-}
+
+module Data.Arib.TS.Internal where
 
 import Control.Monad
-import Control.Monad.Trans
 import Control.Exception
 import Control.Applicative
 import Control.Monad.Trans.Resource
@@ -18,61 +16,69 @@ import Data.Word
 import Data.Function
 import Data.List
 import Data.Bits
+import Data.Monoid
+import Data.Typeable
 import qualified Data.IntMap.Strict as IM
-import Data.Typeable(Typeable)
 
 import Data.Conduit
 import Numeric
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List   as CL
 
-data TS = 
-    TS { header1 :: {-#UNPACK#-}!Word8
-       , header2 :: {-#UNPACK#-}!Word8
-       , header3 :: {-#UNPACK#-}!Word8
-       , payload :: {-#UNPACK#-}!S.ByteString
-       }
+data TS a = 
+    TS { header1   :: {-#UNPACK#-}!Word8
+       , header2   :: {-#UNPACK#-}!Word8
+       , header3   :: {-#UNPACK#-}!Word8
+       , tsPayload :: a
+       } deriving Functor
 
-instance Show TS where
-    show ts@TS{payload} =
-        "TS {transportErrorIndicator = "  ++ show (transportErrorIndicator ts) ++
-        ", payloadUnitStartIndicator = "  ++ show (payloadUnitStartIndicator ts) ++
-        ", transportPriority = "          ++ show (transportPriority ts) ++
-        ", programId = 0x"                ++ showHex (programId ts)
-        ", transportScramblingControl = " ++ show (transportScramblingControl ts) ++
-        ", adaptationFieldControl = "     ++ show (adaptationFieldControl ts) ++
-        ", continuityCounter = 0x"        ++ showHex (continuityCounter ts)
---        ", payload = "                    ++ show payload ++
-        "}"
+instance Show a => Show (TS a) where
+    show ts@TS{tsPayload} =
+        "TS {transportErrorIndicator = "    ++ show (transportErrorIndicator ts) ++
+        ", payloadUnitStartIndicator = "    ++ show (payloadUnitStartIndicator ts) ++
+        ", transportPriority = "            ++ show (transportPriority ts) ++
+        ", tsProgramId = 0x"                ++ showHex (tsProgramId ts)
+        ", tsTransportScramblingControl = " ++ show (tsTransportScramblingControl ts) ++
+        ", adaptationFieldControl = "       ++ show (adaptationFieldControl ts) ++
+        ", continuityCounter = 0x"          ++ showHex (continuityCounter ts)
+        ", tsPayload = "                    ++ show tsPayload ++
+        "}"                                            
+                                                       
+instance Monoid a => Monoid (TS a) where
+    mempty = TS 0 0 0 mempty
+    TS _ _ _ a `mappend` TS b1 b2 b3 b = TS b1 b2 b3 (a <> b)
 
 transportErrorIndicator, payloadUnitStartIndicator, transportPriority,
-    hasAdaptationField, hasPayload :: TS -> Bool
+    hasAdaptationField, hasPayload :: TS a -> Bool
 transportErrorIndicator   TS{header1} = testBit header1 7
 payloadUnitStartIndicator TS{header1} = testBit header1 6
 transportPriority         TS{header1} = testBit header1 5
 hasAdaptationField        TS{header3} = testBit header3 5
 hasPayload                TS{header3} = testBit header3 4
 
-programId :: TS -> Int
-programId TS{header1, header2} =
+tsProgramId :: TS a -> Int
+tsProgramId TS{header1, header2} =
     shiftL (fromIntegral $ header1 .&. 0x1F) 8 .|. fromIntegral header2
 
-transportScramblingControl, adaptationFieldControl, continuityCounter :: TS -> Word8
-transportScramblingControl TS{header3} = shiftR header3 6
-adaptationFieldControl     TS{header3} = shiftR header3 4 .&. 0x3
-continuityCounter          TS{header3} = header3 .&. 0xF
+tsTransportScramblingControl, adaptationFieldControl, continuityCounter :: TS a -> Word8
+tsTransportScramblingControl TS{header3} = shiftR header3 6
+adaptationFieldControl       TS{header3} = shiftR header3 4 .&. 0x3
+continuityCounter            TS{header3} = header3 .&. 0xF
 
-isNextOf :: Word8 -> Word8 -> Bool
-0x0 `isNextOf` 0xf = True
-0x0 `isNextOf` _   = False
-a   `isNextOf` b   = succ b == a
+isNextOf' :: Word8 -> Word8 -> Bool
+0x0 `isNextOf'` 0xf = True
+0x0 `isNextOf'` _   = False
+a   `isNextOf'` b   = succ b == a
+
+isNextOf :: TS a -> TS b -> Bool
+a `isNextOf` b = continuityCounter a `isNextOf'` continuityCounter b
 
 data TsException
     = ReSyncFailed
     deriving (Show,Typeable)
 instance Exception TsException
 
-tsPacket :: MonadThrow m => Int -> Conduit S.ByteString m TS
+tsPacket :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
 tsPacket n = go S.empty
   where
     n64 :: Int64
@@ -125,8 +131,4 @@ detectPacketSize = CL.peek >>= \case
     Just c  -> do
         let m = foldl' (\i a -> IM.insertWith (const succ) (fromIntegral $ S.length a) 1 i) IM.empty $ S.split 0x47 c
         return . succ . fst . maximumBy (compare `on` snd) $ IM.toList (m :: IM.IntMap Int)
-
-main :: IO ()
-main = do
-    runResourceT $ CB.sourceFile "../test.ts" $$ tsPacket 188 =$ CL.isolate 500 =$ CL.mapM_ (liftIO . print)
 

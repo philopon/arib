@@ -24,6 +24,7 @@ library
                      , Data.Arib.String.Internal.Types
 
                      , Data.Arib.TS.Internal
+                     , Data.Arib.PESPSI.Internal
   -- other-modules:       
   other-extensions:    LambdaCase
                      , Rank2Types
@@ -41,6 +42,7 @@ library
                      , conduit          >=1.1  && <1.2
                      , conduit-extra    >=1.1  && <1.2
                      , resourcet        >=1.1  && <1.2
+                     , binary           >=0.7  && <0.8
   hs-source-dirs:      src
   ghc-options:         -Wall -O2
   default-language:    Haskell2010
