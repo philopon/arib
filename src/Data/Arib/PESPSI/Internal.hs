@@ -4,6 +4,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 
 module Data.Arib.PESPSI.Internal where
 
@@ -18,11 +19,10 @@ import Data.Monoid
 import Data.Typeable
 import Data.Bits
 import Data.Word
-import Data.List
-import Data.Maybe
 import Data.Binary.Get
 
 import Data.Arib.TS.Internal
+import Data.Arib.CRC
 
 data PESPSI a
     = PESPSI
@@ -77,7 +77,7 @@ concatTsPackets = concatTsPackets' (yield . Left) (yield . Right)
 concatTsPackets_ :: Monad m => Conduit (TS S.ByteString) m (PESPSI L.ByteString)
 concatTsPackets_ = concatTsPackets' (const $ return ()) yield
 
-data Wrapper = forall a. (Typeable a, Show a) => Wrap a
+data Wrapper = forall a. (Typeable a, Show a) => Wrap (PESPSI a)
 deriving instance Show Wrapper
 
 class PSI a where
@@ -86,10 +86,15 @@ class PSI a where
   sectionLength a = fromIntegral $ shiftR (header a) 40 .&. 0xFFF
   {-# INLINE sectionLength #-}
 
-psiHeader :: (Word64 -> L.ByteString -> a) -> L.ByteString -> a
-psiHeader f s = case runGetOrFail getWord64be s of
-    Left  (_,_,e) -> error $ "psiHeader: " ++ e
-    Right (o,_,w) -> f w o
+psiHeader :: (Word64 -> L.ByteString -> Maybe a) -> L.ByteString -> Maybe a
+psiHeader f s = do
+    let [u,l] = L.unpack . L.take 2 $ L.tail s
+        len   = shiftL (fromIntegral u .&. 0xf) 8 .|. fromIntegral l
+    if crc32 (L.take (len + 3) s) == 0
+        then case runGetOrFail getWord64be s of
+            Left  (_,_,_) -> Nothing
+            Right (o,_,w) -> f w o
+        else Nothing
 
 data PAT 
     = PAT
@@ -105,30 +110,100 @@ instance PSI Word64 where
     header = id
     {-# INLINE header #-}
 
-pat :: Int -> L.ByteString -> Maybe PAT
-pat 0 bs = Just $ psiHeader go bs
+pat :: PESPSIFunc PAT
+pat 0 = psiHeader $ \h -> Just . runGet (getF h)
   where
-    go h b =
-        let r = runGet (replicateM ((sectionLength h - 9) `quot` 4) ((,) <$> getWord16be <*> getWord16be)) b
-            in PAT h $ foldl' foldF IM.empty r
-    foldF m (0,_) = m
-    foldF m (u,l) = IM.insert (fromIntegral u) (fromIntegral l .&. 0x1FFF) m
-pat _ _  = Nothing
+    getF h = PAT h <$> foldM (\m _ -> do
+        genre <- getWord16be
+        pid   <- fromIntegral . (0x1FFF .&.) <$> getWord16be
+        return $ if genre == 0
+                 then m
+                 else IM.insert (fromIntegral genre) pid m
+        ) IM.empty [1 .. ((sectionLength h - 9) `quot` 4)]
 
-type WrappedFunc = PESPSI L.ByteString -> Maybe Wrapper
+pat _ = const Nothing
 
-wrap :: (Typeable a, Show a) => (Int -> L.ByteString -> Maybe a) -> WrappedFunc
+data PMT
+    = PMT
+        { pmtPsiHeader   :: {-#UNPACK#-}!Word64
+        , pmtPcrPid      :: {-#UNPACK#-}!Word16
+        , pmtDescriptors :: {-#UNPACK#-}!Descriptors
+        , pmtStreams     :: {-#UNPACK#-}!(IM.IntMap (Word8, Descriptors))
+        }
+        deriving Show
+
+pmt :: (Int -> Bool) -> PESPSIFunc PMT
+pmt f i | f i       = psiHeader $ \h -> Just . runGet (getF h)
+        | otherwise = const Nothing
+  where
+    getF h = do
+        pcrpid <- (0x1FFF .&.) <$> getWord16be
+        prglen <- fromIntegral . ( 0xFFF .&.) <$> getWord16be
+        desc1  <- getDescriptors prglen
+        let remain = sectionLength h - fromIntegral prglen - 13
+        PMT h pcrpid desc1 <$> loop IM.empty remain
+    loop dict n
+        | n <= 0    = return dict
+        | otherwise = do
+            s     <- fromIntegral <$> getWord8
+            epid  <- fromIntegral . (0x1FFF .&.) <$> getWord16be
+            eslen <- fromIntegral . (0x0FFF .&.) <$> getWord16be
+            descs <- getDescriptors (fromIntegral eslen)
+            loop (IM.insert epid (s, descs) dict) (n - 5 - eslen)
+
+data Descriptor 
+    = StreamIdDescriptor Word8
+    | Raw L.ByteString
+    deriving Show
+
+getDescriptor :: Get (Int, Int, Descriptor)
+getDescriptor = getWord8 >>= \case
+    0x52 -> getWord8 >> ((3,0x52,) . StreamIdDescriptor <$> getWord8)
+    w    -> getWord8 >>= \len -> (fromIntegral $ len + 2, fromIntegral w,) . Raw <$>
+            (getLazyByteString (fromIntegral len))
+
+newtype Descriptors = Descriptors (IM.IntMap Descriptor)
+                    deriving Show
+
+streamIdDescriptor :: Descriptors -> Maybe Word8
+streamIdDescriptor (Descriptors d) = IM.lookup 0x52 d >>= unWrap
+  where unWrap (StreamIdDescriptor w) = Just w
+        unWrap _ = Nothing
+
+getDescriptors :: Int -> Get Descriptors
+getDescriptors = go IM.empty
+  where
+    go dict len 
+        | len <= 0  = return $ Descriptors dict
+        | otherwise = getDescriptor >>= \(l,i,d) -> go (IM.insert i d dict) (len - l)
+
+raw :: PESPSIFunc L.ByteString
+raw _ = Just
+
+type PESPSIFunc a = Int -> L.ByteString -> Maybe a
+type WrappedFunc  = PESPSI L.ByteString -> Maybe Wrapper
+
+wrap :: (Typeable a, Show a) => (PESPSIFunc a) -> WrappedFunc
 wrap f p@PESPSI{..} = (\b -> Wrap $ p {pesPsiPayload = b}) <$> f pesPsiProgramId pesPsiPayload 
 
-multiPESPSI :: Monad m => [WrappedFunc] -> Conduit (PESPSI L.ByteString) m Wrapper
-multiPESPSI fs = awaitForever $ \raw ->
-     case mapMaybe (\f -> f raw) fs of
-         []  -> return ()
-         a:_ -> yield a
+data WrappedFuncs = forall a. (Typeable a, Show a) => (Int -> L.ByteString -> Maybe a) :-> WrappedFuncs
+                  | END 
+infixr :->
+infixr -|
 
-singlePESPSI :: Monad m => (Int -> a -> Maybe b) -> Conduit (PESPSI a) m (PESPSI b)
-singlePESPSI f = awaitForever $ \raw ->
-    case f (pesPsiProgramId raw) (pesPsiPayload raw) of
+(-|) :: (Typeable a, Typeable b, Show a, Show b) => PESPSIFunc a -> PESPSIFunc b -> WrappedFuncs
+a -| b = a :-> b :-> END
+
+multiPESPSI :: Monad m => WrappedFuncs -> Conduit (PESPSI L.ByteString) m Wrapper
+multiPESPSI = awaitForever . go
+  where
+    go END        _ = return ()
+    go (f :-> fs) r = maybe (go fs r) (yield . Wrap . (\p -> r{pesPsiPayload = p})) $
+                      f (pesPsiProgramId r) (pesPsiPayload r)
+
+singlePESPSI :: Monad m => PESPSIFunc a -> Conduit (PESPSI L.ByteString) m (PESPSI a)
+singlePESPSI f = awaitForever $ \r ->
+    case f (pesPsiProgramId r) (pesPsiPayload r) of
         Nothing -> return ()
-        Just a  -> yield raw{pesPsiPayload = a}
+        Just a  -> yield r{pesPsiPayload = a}
 
