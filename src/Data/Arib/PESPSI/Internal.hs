@@ -90,19 +90,25 @@ deriving instance Show Wrapper
 
 class PSI a where
   header        :: a -> Word64
+  tableId       :: a -> Word8
+  tableId a = fromIntegral $ shiftR (header a) 56
   sectionLength :: a -> Int
   sectionLength a = fromIntegral $ shiftR (header a) 40 .&. 0xFFF
-  {-# INLINE sectionLength #-}
+  versionNumber :: a -> Word8
+  versionNumber a = fromIntegral $ shiftR (header a) 17 .&. 0x1F
+  currentNextIndicator :: a -> Bool
+  currentNextIndicator a = testBit (header a) 16
+  sectionNumber :: a -> Word8
+  sectionNumber a = fromIntegral $ shiftR (header a) 8
+  lastSectionNumber :: a -> Word8
+  lastSectionNumber a = fromIntegral $ header a
 
-psiHeader :: (Word64 -> L.ByteString -> Maybe a) -> L.ByteString -> Maybe a
-psiHeader f s = do
-    let [u,l] = L.unpack . L.take 2 $ L.tail s
-        len   = shiftL (fromIntegral u .&. 0xf) 8 .|. fromIntegral l
-    if crc32 (L.take (len + 3) s) == 0
-        then case runGetOrFail getWord64be s of
-            Left  (_,_,_) -> Nothing
-            Right (o,_,w) -> f w o
-        else Nothing
+  {-# INLINE tableId #-}
+  {-# INLINE sectionLength #-}
+  {-# INLINE versionNumber #-}
+  {-# INLINE currentNextIndicator #-}
+  {-# INLINE sectionNumber #-}
+  {-# INLINE lastSectionNumber #-}
 
 data PAT 
     = PAT
