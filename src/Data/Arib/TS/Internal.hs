@@ -65,14 +65,6 @@ tsTransportScramblingControl TS{header3} = shiftR header3 6
 adaptationFieldControl       TS{header3} = shiftR header3 4 .&. 0x3
 continuityCounter            TS{header3} = header3 .&. 0xF
 
-isNextOf' :: Word8 -> Word8 -> Bool
-0x0 `isNextOf'` 0xf = True
-0x0 `isNextOf'` _   = False
-a   `isNextOf'` b   = succ b == a
-
-isNextOf :: TS a -> TS b -> Bool
-a `isNextOf` b = continuityCounter a `isNextOf'` continuityCounter b
-
 data TsException
     = ReSyncFailed
     deriving (Show,Typeable)
