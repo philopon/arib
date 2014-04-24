@@ -110,14 +110,46 @@ class PSI a where
   {-# INLINE sectionNumber #-}
   {-# INLINE lastSectionNumber #-}
 
+checkAndGetHeader :: Get PSIHeader
+checkAndGetHeader = do
+    lookAhead $ do
+        [h,u,l] <- S.unpack <$> getByteString 3
+        let len = shiftL (fromIntegral u .&. 0xf) 8 .|. fromIntegral l
+        s <- getLazyByteString len
+        unless (crc32 (h `L.cons` u `L.cons` l `L.cons` s) == 0) $ fail "CRC32 check failed."
+    PSIHeader <$> getWord64be
+
+runPsi :: (PSIHeader -> Get a) -> L.ByteString -> [a]
+runPsi get = go
+  where
+    go s = case runGetOrFail ((checkAndGetHeader >>= get) <* skip 4) s of
+        Left _ -> []
+        Right (s',_,p) | L.null s'         -> [p]
+                       | L.head s' == 0xFF -> [p]
+                       | otherwise         -> p : go s'
+
 data PAT 
     = PAT
-        { patPsiHeader  :: {-#UNPACK#-}!Word64
+        { patPsiHeader  :: {-#UNPACK#-}!PSIHeader
         , programPidMap :: {-#UNPACK#-}!(IM.IntMap Int)
         } deriving(Show, Typeable)
 
 instance PSI PAT where
-    header = patPsiHeader
+    header = header . patPsiHeader
+    {-# INLINE header #-}
+
+newtype PSIHeader = PSIHeader Word64
+instance Show PSIHeader where
+    show h = "PSIHeader {tableId = " ++ show (tableId h) ++
+             ", sectionLength = " ++ show (sectionLength h) ++
+             ", versionNumber = "          ++ show (versionNumber h) ++
+             ", currentNextIndicator = " ++ show (currentNextIndicator h) ++
+             ", sectionNumber = " ++ show (sectionNumber h) ++
+             ", lastSectionNumber = " ++ show (lastSectionNumber h) ++
+             "}"
+
+instance PSI PSIHeader where
+    header (PSIHeader h) = h
     {-# INLINE header #-}
 
 instance PSI Word64 where
@@ -125,7 +157,7 @@ instance PSI Word64 where
     {-# INLINE header #-}
 
 pat :: PESPSIFunc PAT
-pat 0 = psiHeader $ \h -> Just . runGet (getF h)
+pat 0 = runPsi getF
   where
     getF h = PAT h <$> foldM (\m _ -> do
         genre <- getWord16be
@@ -135,20 +167,23 @@ pat 0 = psiHeader $ \h -> Just . runGet (getF h)
                  else IM.insert (fromIntegral genre) pid m
         ) IM.empty [1 .. ((sectionLength h - 9) `quot` 4)]
 
-pat _ = const Nothing
+pat _ = const []
 
 data PMT
     = PMT
-        { pmtPsiHeader   :: {-#UNPACK#-}!Word64
+        { pmtPsiHeader   :: {-#UNPACK#-}!PSIHeader
         , pmtPcrPid      :: {-#UNPACK#-}!Word16
         , pmtDescriptors :: {-#UNPACK#-}!Descriptors
         , pmtStreams     :: {-#UNPACK#-}!(IM.IntMap (Word8, Descriptors))
         }
         deriving Show
 
+instance PSI PMT where
+    header = header . pmtPsiHeader
+
 pmt :: (Int -> Bool) -> PESPSIFunc PMT
-pmt f i | f i       = psiHeader $ \h -> Just . runGet (getF h)
-        | otherwise = const Nothing
+pmt f i | f i       = runPsi getF
+        | otherwise = const []
   where
     getF h = do
         pcrpid <- (0x1FFF .&.) <$> getWord16be
@@ -192,15 +227,15 @@ getDescriptors = go IM.empty
         | otherwise = getDescriptor >>= \(l,i,d) -> go (IM.insert i d dict) (len - l)
 
 raw :: PESPSIFunc L.ByteString
-raw _ = Just
+raw _ = (:[])
 
-type PESPSIFunc a = Int -> L.ByteString -> Maybe a
-type WrappedFunc  = PESPSI L.ByteString -> Maybe Wrapper
+type PESPSIFunc a = Int -> L.ByteString -> [a]
+type WrappedFunc  = PESPSI L.ByteString -> [Wrapper]
 
 wrap :: (Typeable a, Show a) => (PESPSIFunc a) -> WrappedFunc
 wrap f p@PESPSI{..} = (\b -> Wrap $ p {pesPsiPayload = b}) <$> f pesPsiProgramId pesPsiPayload 
 
-data WrappedFuncs = forall a. (Typeable a, Show a) => (Int -> L.ByteString -> Maybe a) :-> WrappedFuncs
+data WrappedFuncs = forall a. (Typeable a, Show a) => (PESPSIFunc a) :-> WrappedFuncs
                   | END 
 infixr :->
 infixr -|
@@ -212,12 +247,12 @@ multiPESPSI :: Monad m => WrappedFuncs -> Conduit (PESPSI L.ByteString) m Wrappe
 multiPESPSI = awaitForever . go
   where
     go END        _ = return ()
-    go (f :-> fs) r = maybe (go fs r) (yield . Wrap . (\p -> r{pesPsiPayload = p})) $
-                      f (pesPsiProgramId r) (pesPsiPayload r)
+    go (f :-> fs) r = case f (pesPsiProgramId r) (pesPsiPayload r) of
+        [] -> go fs r
+        m  -> mapM_ (yield . Wrap . (\p -> r{pesPsiPayload = p})) m
 
 singlePESPSI :: Monad m => PESPSIFunc a -> Conduit (PESPSI L.ByteString) m (PESPSI a)
 singlePESPSI f = awaitForever $ \r ->
     case f (pesPsiProgramId r) (pesPsiPayload r) of
-        Nothing -> return ()
-        Just a  -> yield r{pesPsiPayload = a}
-
+        [] -> return ()
+        m  -> mapM_ (\a -> yield r{pesPsiPayload = a}) m
