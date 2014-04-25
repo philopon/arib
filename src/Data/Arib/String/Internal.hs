@@ -109,7 +109,7 @@ processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3T
 
 processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify . g0To)
   where
-    notG0Process 0x28 = await_     >>= processEscape' [0x24,0x28] awaitDRCS2 g0To
+    notG0Process 0x28 = await_     >>=         processEscape' [0x24,0x28] awaitDRCS2 g0To
     notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (debug "G1 -> " modify . g1To)
     notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (debug "G2 -> " modify . g2To)
     notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (debug "G3 -> " modify . g3To)
@@ -166,21 +166,8 @@ process = CB.head >>= \case
     Nothing -> return ()
     Just a  -> process' a >> process
 
--- http://www35.atwiki.jp/tvrock/m/pages/26.html
-mito :: L.ByteString
-mito = L.pack $ 0x1B : 0x2B : 0x31 : -- G3 -> Katakana
-    [ 0x1B, 0x7C, 0xC9, 0xE9, 0xDE, 0xA2, 0xF3, 0xB3, 0x21, 0x3C
-    , 0xEB, 0x21, 0x56, 0x3F, 0x65, 0x38, 0x4D, 0x32, 0x2B, 0x4C
-    , 0x67, 0x21, 0x21, 0x42, 0x68, 0x1B, 0x7E, 0xB7, 0x49, 0x74
-    , 0x21, 0x57, 0x1B, 0x24, 0x2A, 0x3B, 0x1B, 0x7D, 0xFA, 0xEA
-    ] 
-
-macroCall :: L.ByteString
-macroCall = L.pack $
-    0x1B : 0x7C : -- LS3R
-    0xE0 : []     -- Macro 0x60
-
-testUtf8 :: L.ByteString -> Either AribException L.ByteString
-testUtf8 str = 
-    fmap (B.toLazyByteString . snd) $
+decodeUtf8 :: Monad m => L.ByteString -> m L.ByteString
+decodeUtf8 str = 
+    either (fail . show) return . fmap (B.toLazyByteString . snd) $
     evalRWST (CB.sourceLbs str $$ process) utf8Config (initialState utf8Config)
+

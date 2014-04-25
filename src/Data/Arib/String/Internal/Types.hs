@@ -112,27 +112,27 @@ defaultMacro = fromList
     f8  = 0x35 -- Mosaic D
     f9  = 0x70 -- Macro
 
-    f10 = 0x40 
-    f11 = 0x41
-    f12 = 0x42
-    f13 = 0x43
-    f14 = 0x44
-    f15 = 0x45
-    f16 = 0x46
-    f17 = 0x47
-    f18 = 0x48
-    f19 = 0x49
-    f20 = 0x4A
-    f21 = 0x4B
-    f22 = 0x4C
-    f23 = 0x4D
-    f24 = 0x4E
+    f10 = 0x41 
+    f11 = 0x42
+    f12 = 0x43
+    f13 = 0x44
+    f14 = 0x45
+    f15 = 0x46
+    f16 = 0x47
+    f17 = 0x48
+    f18 = 0x49
+    f19 = 0x4A
+    f20 = 0x4B
+    f21 = 0x4C
+    f22 = 0x4D
+    f23 = 0x4E
+    f24 = 0x4F
 
 initialState :: AribConfig a -> AribState a
 initialState c =
     AribState g0 g2 
     (GetChar2 $ kanji c) (GetChar1 $ eisuu c)
-    (GetChar1 $ hiragana c) Macro defaultMacro
+    (GetChar1 $ hiragana c) (GetChar1 $ katakana c) defaultMacro
 
 data Control
     = Control
