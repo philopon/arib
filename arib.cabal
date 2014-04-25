@@ -16,7 +16,13 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.Arib.String.Internal
+  exposed-modules:     Data.Arib.String
+                     , Data.Arib.TS
+                     , Data.Arib.CRC
+                     , Data.Arib.PESPSI
+                     , Data.Arib.PSI
+
+                     , Data.Arib.String.Internal
                      , Data.Arib.String.Internal.Charset
                      , Data.Arib.String.Internal.Common
                      , Data.Arib.String.Internal.Debug
@@ -24,8 +30,18 @@ library
                      , Data.Arib.String.Internal.Types
 
                      , Data.Arib.TS.Internal
+
+                     , Data.Arib.CRC.Internal
+
                      , Data.Arib.PESPSI.Internal
-  -- other-modules:       
+
+                     , Data.Arib.PSI.Internal
+                     , Data.Arib.PSI.Internal.Common
+                     , Data.Arib.PSI.Internal.Descriptor
+                     , Data.Arib.PSI.Internal.EIT
+                     , Data.Arib.PSI.Internal.PAT
+                     , Data.Arib.PSI.Internal.PMT
+
   other-extensions:    LambdaCase
                      , Rank2Types
                      , NoMonomorphismRestriction

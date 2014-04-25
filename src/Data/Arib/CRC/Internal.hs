@@ -24,6 +24,7 @@ calc32 :: Word32 -> S.ByteString -> Word32
 calc32 = S.foldl' (\c i -> (crc32Table U.! (fromIntegral $ fromIntegral (shiftR c 24) `xor` i)) `xor` shiftL c 8)
 {-# INLINE calc32 #-}
 
+-- | Calc Mpeg2 CRC32.
 class CRC32 a where
   crc32 :: a -> Word32
 

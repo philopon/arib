@@ -69,32 +69,32 @@ finToDRCS1 c 0x4F = debug "DRCS15 <-" Right (GetChar1 $ drcs15 c)
 finToDRCS1 _ 0x70 = debug "MACRO <-" Right Macro
 finToDRCS1 _ w    = Left w
 
-await_ :: MonadError AribException m => Consumer S.ByteString m Word8
+await_ :: MonadError AribStringException m => Consumer S.ByteString m Word8
 await_ = CB.head >>= \case
     Nothing -> throwError IllegalEndOfInput
     Just a  -> return a
 
 awaitGSet1, awaitGSet2, awaitDRCS1, awaitDRCS2
-    :: (MonadReader (AribConfig a) m, MonadError AribException m) => Consumer S.ByteString m (Either Word8 (GetChar a))
+    :: (MonadReader (AribConfig a) m, MonadError AribStringException m) => Consumer S.ByteString m (Either Word8 (GetChar a))
 awaitGSet1 = finToGSet1 <$> ask <*> await_
 awaitGSet2 = finToGSet2 <$> ask <*> await_
 
 awaitDRCS1 = finToDRCS1 <$> ask <*> await_
 awaitDRCS2 = finToDRCS2 <$> ask <*> await_
 
-data AribException
+data AribStringException
     = UnknownEscapeSequence [Word8]
     | IllegalEndOfInput
     | WantInput String
     deriving Show
 
-processEscape' :: (MonadError AribException m, MonadState s m) 
+processEscape' :: (MonadError AribStringException m, MonadState s m) 
                => [Word8] -> m (Either Word8 a) -> (a -> s -> s) -> Word8 -> m ()
 processEscape' ws awit field 0x20 = awit >>=
     either (\w -> throwError . UnknownEscapeSequence $ ws ++ [0x20,w]) (modify . field)
 processEscape' ws _    _     w    = throwError . UnknownEscapeSequence $ ws ++ [w]
 
-processEscape :: (MonadState (AribState a) m, MonadReader (AribConfig a) m, MonadError AribException m)
+processEscape :: (MonadState (AribState a) m, MonadReader (AribConfig a) m, MonadError AribStringException m)
               => Word8 -> Consumer S.ByteString m ()
 processEscape 0x6E = debug "LS2"  modify $ glTo g2 -- LS2
 processEscape 0x6F = debug "LS3"  modify $ glTo g3 -- LS3
@@ -117,7 +117,7 @@ processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify . 
 
 processEscape w = throwError $ UnknownEscapeSequence [w]
 
-applyGetChar :: ( MonadState (AribState a) m, MonadError AribException m
+applyGetChar :: ( MonadState (AribState a) m, MonadError AribStringException m
                 , MonadReader (AribConfig a) m, MonadWriter a m)
              => (AribState a -> GetChar a) -> Word8 -> Consumer S.ByteString m ()
 applyGetChar ptr w = gets ptr >>= \case
@@ -133,7 +133,7 @@ localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
 
 -- TODO: Macro, CSI
 processC :: ( MonadState (AribState a) m, MonadReader (AribConfig a) m
-            , MonadError AribException m, MonadWriter a m) 
+            , MonadError AribStringException m, MonadWriter a m) 
          => Word8 -> Consumer S.ByteString m ()
 processC 0x0F = modify (glTo g0) >> process         -- LS0
 processC 0x0E = modify (glTo g1) >> process         -- LS1
@@ -152,7 +152,7 @@ processC w
     just1  = [0x16,0x8B,0x91,0x93,0x94,0x97,0x98]
     just2  = [0x1C,0x9D] -- APS TIME
 
-process' :: ( MonadError AribException m, MonadReader (AribConfig a) m
+process' :: ( MonadError AribStringException m, MonadReader (AribConfig a) m
             , MonadState (AribState a) m, MonadWriter a m) => Word8 -> Consumer S.ByteString m ()
 process' 0xFF = processC 0xFF
 process' w |              w < 0x21 = processC w
@@ -161,7 +161,7 @@ process' w |              w < 0x21 = processC w
            | otherwise             = applyGetChar gr w
 
 process :: ( MonadState (AribState a) m, MonadReader (AribConfig a) m
-           , MonadError AribException m, MonadWriter a m) => Consumer S.ByteString m ()
+           , MonadError AribStringException m, MonadWriter a m) => Consumer S.ByteString m ()
 process = CB.head >>= \case
     Nothing -> return ()
     Just a  -> process' a >> process
