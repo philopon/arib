@@ -20,15 +20,19 @@ import Data.Typeable
 import Data.Bits
 import Data.Word
 import Data.Binary.Get
+import Data.Time
 
+import Data.Arib.String.Internal
 import Data.Arib.TS.Internal
 import Data.Arib.CRC
+
+import Debug.Trace
 
 data PESPSI a
     = PESPSI
         { pesPsiProgramId       :: {-#UNPACK#-}!Int
-        , pesPsiAdaptationField :: {-#UNPACK#-}!L.ByteString
-        , pesPsiPayload         :: a
+        , pesPsiAdaptationField :: !L.ByteString
+        , pesPsiPayload         :: !a
         } deriving (Show, Functor, Typeable)
 
 isNextOf :: Word8 -> Word8 -> Bool
@@ -123,7 +127,7 @@ runPsi :: (PSIHeader -> Get a) -> L.ByteString -> [a]
 runPsi get = go
   where
     go s = case runGetOrFail ((checkAndGetHeader >>= get) <* skip 4) s of
-        Left _ -> []
+        Left _ -> traceShow "error" []
         Right (s',_,p) | L.null s'         -> [p]
                        | L.head s' == 0xFF -> [p]
                        | otherwise         -> p : go s'
@@ -131,7 +135,7 @@ runPsi get = go
 data PAT 
     = PAT
         { patPsiHeader  :: {-#UNPACK#-}!PSIHeader
-        , programPidMap :: {-#UNPACK#-}!(IM.IntMap Int)
+        , programPidMap :: !(IM.IntMap Int)
         } deriving(Show, Typeable)
 
 instance PSI PAT where
@@ -173,8 +177,8 @@ data PMT
     = PMT
         { pmtPsiHeader   :: {-#UNPACK#-}!PSIHeader
         , pmtPcrPid      :: {-#UNPACK#-}!Word16
-        , pmtDescriptors :: {-#UNPACK#-}!Descriptors
-        , pmtStreams     :: {-#UNPACK#-}!(IM.IntMap (Word8, Descriptors))
+        , pmtDescriptors :: !Descriptors
+        , pmtStreams     :: !(IM.IntMap (Word8, Descriptors))
         }
         deriving Show
 
@@ -201,13 +205,25 @@ pmt f i | f i       = runPsi getF
             loop (IM.insert epid (s, descs) dict) (n - 5 - eslen)
 
 data Descriptor 
-    = StreamIdDescriptor Word8
+    = StreamIdDescriptor {-#UNPACK#-}!Word8
+    | ShortEventDescriptor
+        { sedLanguage   :: {-#UNPACK#-}!S.ByteString 
+        , sedTitle      :: L.ByteString
+        , sedDecription :: L.ByteString
+        }
     | Raw L.ByteString
     deriving Show
 
 getDescriptor :: Get (Int, Int, Descriptor)
 getDescriptor = getWord8 >>= \case
     0x52 -> getWord8 >> ((3,0x52,) . StreamIdDescriptor <$> getWord8)
+    0x4D -> do
+        len  <- getWord8
+        lang <- getByteString 3
+        pLen <- fromIntegral <$> getWord8
+        titl <- decodeUtf8 =<< getLazyByteString pLen
+        dLen <- fromIntegral <$> getWord8
+        (fromIntegral $ len + 2, 0x4d,) . ShortEventDescriptor lang titl <$> (decodeUtf8 =<< getLazyByteString dLen)
     w    -> getWord8 >>= \len -> (fromIntegral $ len + 2, fromIntegral w,) . Raw <$>
             (getLazyByteString (fromIntegral len))
 
@@ -225,6 +241,64 @@ getDescriptors = go IM.empty
     go dict len 
         | len <= 0  = return $ Descriptors dict
         | otherwise = getDescriptor >>= \(l,i,d) -> go (IM.insert i d dict) (len - l)
+
+data EIT
+    = EIT 
+        { eitPsiHeader             :: {-#UNPACK#-}!PSIHeader
+        , eitTransportStreamId     :: {-#UNPACK#-}!Word16
+        , eitOriginalNetworkId     :: {-#UNPACK#-}!Word16
+        , segmentLastSectionNumber :: {-#UNPACK#-}!Word8
+        , lastTableId              :: {-#UNPACK#-}!Word8
+        , eitEvents                :: ![Event]
+        } deriving Show
+
+data Event
+    = Event 
+        { eventId          :: {-#UNPACK#-}!Word16
+        , eventStartTime   :: {-#UNPACK#-}!LocalTime
+        , eventDuration    :: !DiffTime
+        , eventLanguage    :: {-#UNPACK#-}!S.ByteString
+        , eventTitle       :: !L.ByteString
+        , eventDescription :: !L.ByteString
+        , eventStatus      :: {-#UNPACK#-}!Word16
+        , eventScramble    :: !Bool 
+        , eventDescriptors :: !Descriptors
+        } deriving Show
+
+instance PSI EIT where
+    header = header . eitPsiHeader
+
+eit :: PESPSIFunc EIT
+eit i | i `elem` [0x12,0x26,0x27] = runPsi getF
+      | otherwise                 = const []
+  where
+    getF h = do
+        tsid <- getWord16be
+        onid <- getWord16be
+        slsn <- getWord8
+        ltid <- getWord8
+        EIT h tsid onid slsn ltid <$> loop (fromIntegral $ sectionLength h - 15 :: Int)
+
+    loop n 
+        | n <= 0    = return []
+        | otherwise = do
+            eid <- getWord16be
+            tim <- getWord64be
+            let mjd = ModifiedJulianDay . fromIntegral $ shiftR tim 48
+                tod = TimeOfDay (fromIntegral $ bcd 40 tim) (fromIntegral $ bcd 32 tim) (fromIntegral $ bcd 24 tim)
+                dur = TimeOfDay (fromIntegral $ bcd 16 tim) (fromIntegral $ bcd  8 tim) (fromIntegral $ bcd  0 tim)
+            st  <- getWord16be
+            let stt = shiftR  st 13
+                scr = testBit st 12
+                len = fromIntegral $ 0xFFF .&. st
+            Descriptors descs <- getDescriptors len
+            let ShortEventDescriptor lang title desc = case IM.lookup 0x4D descs of
+                    Nothing -> ShortEventDescriptor S.empty L.empty L.empty
+                    Just e  -> e
+
+            (Event eid (LocalTime mjd tod) (timeOfDayToTime dur) lang title desc
+                stt scr (Descriptors $ IM.delete 0x4D descs) :) <$> loop (n - len - 12)
+    bcd s w = shiftR w s .&. 0xf
 
 raw :: PESPSIFunc L.ByteString
 raw _ = (:[])
