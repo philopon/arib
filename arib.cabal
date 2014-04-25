@@ -16,7 +16,8 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.Arib.String
+  exposed-modules:     Data.Arib
+                     , Data.Arib.String
                      , Data.Arib.TS
                      , Data.Arib.CRC
                      , Data.Arib.PESPSI

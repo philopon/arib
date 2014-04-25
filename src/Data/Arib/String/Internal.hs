@@ -166,6 +166,8 @@ process = CB.head >>= \case
     Nothing -> return ()
     Just a  -> process' a >> process
 
+-- | decode arib string to utf8 encoded bytestring.  
+--   when decode error, call fail method of Monad instance.
 decodeUtf8 :: Monad m => L.ByteString -> m L.ByteString
 decodeUtf8 str = 
     either (fail . show) return . fmap (B.toLazyByteString . snd) $

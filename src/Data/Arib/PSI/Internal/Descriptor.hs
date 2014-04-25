@@ -18,12 +18,15 @@ import Data.Binary.Get
 import Data.Arib.String
 
 data Descriptor 
+    -- | 0x52
     = StreamIdDescriptor {-#UNPACK#-}!Word8
+    -- | 0x4D
     | ShortEventDescriptor
         { sedLanguage   :: {-#UNPACK#-}!S.ByteString 
         , sedTitle      :: L.ByteString
         , sedDecription :: L.ByteString
         }
+    -- | other descriptors(not implemented.)
     | Raw L.ByteString
     deriving Show
 

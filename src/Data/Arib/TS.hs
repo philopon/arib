@@ -12,7 +12,7 @@ module Data.Arib.TS
     , continuityCounter
     , adaptationFieldControl
     -- * Conduit
-    , tsPacket
+    , tsPackets
     , detectPacketSize
     , TsException(..)
     ) where

@@ -70,8 +70,8 @@ data TsException
     deriving (Show,Typeable)
 instance Exception TsException
 
-tsPacket :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
-tsPacket n = {-# SCC "tsPacket" #-} go S.empty
+tsPackets :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
+tsPackets n = {-# SCC "tsPacket" #-} go S.empty
   where
     n64 :: Int64
     n64 = fromIntegral n
@@ -86,7 +86,7 @@ tsPacket n = {-# SCC "tsPacket" #-} go S.empty
 
             yield $ TS h1 h2 h3 (L.toStrict p)
             go (L.toStrict p)
-{-# INLINE tsPacket #-}
+{-# INLINE tsPackets #-}
 
 safeIndexL :: L.ByteString -> Int64 -> Maybe Word8
 safeIndexL b n

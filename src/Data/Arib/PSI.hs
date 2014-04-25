@@ -1,13 +1,16 @@
 module Data.Arib.PSI
     (
-    -- * PSI Class/Datatype
+    -- * PSI Class/Datatype/Alias
     PSI(..)
     , PSIHeader(..)
     , PSIFunc
     -- * PSI Tables
     , raw
+    -- ** Program Association Table(tableId:0x0000) 
     , PAT(..), pat
+    -- ** Program Map Table(tableId:assigned by PAT)
     , PMT(..), PMTStream(..), pmt, pmt'
+    -- ** Event Information Table(tableId:0x0012,0x0026,0x0027)
     , EIT(..), Event(..), eit
 
     -- * Descriptors
