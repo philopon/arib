@@ -47,7 +47,8 @@ concatTsPackets' :: Monad m
                  => (TS S.ByteString -> ConduitM (TS S.ByteString) o m ())
                  -> (PESPSI L.ByteString -> ConduitM (TS S.ByteString) o m ())
                  -> ConduitM (TS S.ByteString) o m ()
-concatTsPackets' scrambledF unscrambledF = go (IM.empty :: IM.IntMap (Word8, PESPSI B.Builder))
+concatTsPackets' scrambledF unscrambledF =
+    {-# SCC "concatTsPackets'" #-} go (IM.empty :: IM.IntMap (Word8, PESPSI B.Builder))
   where
     go dict = await >>= \case
         Just ts
@@ -57,11 +58,12 @@ concatTsPackets' scrambledF unscrambledF = go (IM.empty :: IM.IntMap (Word8, PES
                 Just (cc, acc)
                     -- Continued Packet
                     | continuityCounter ts `isNextOf` cc && not (payloadUnitStartIndicator ts) ->
+                        {-# SCC "concatTsPackets'[ContinuedPacket]" #-}
                         go $ IM.insert (tsProgramId ts) 
                         (continuityCounter ts, acc `appendPacket` B.byteString (tsPayload ts)) dict
 
                     -- Start Packet -> yield chunked packet
-                    | payloadUnitStartIndicator ts -> do
+                    | payloadUnitStartIndicator ts -> {-# SCC "concatTsPackets'[StartAndYieldPacket]" #-} do
                         let (ad, bf, pl) = splitPayload (hasAdaptationField ts) (hasPayload ts) (tsPayload ts)
                         unscrambledF . fmap B.toLazyByteString $ acc `appendPacket` bf
                         go $ IM.insert (tsProgramId ts) (continuityCounter ts, PESPSI (tsProgramId ts) ad pl) dict
@@ -69,7 +71,7 @@ concatTsPackets' scrambledF unscrambledF = go (IM.empty :: IM.IntMap (Word8, PES
                     -- !payloadunitstart && !next packet
                     | otherwise -> go dict 
                 Nothing
-                    | payloadUnitStartIndicator ts -> do
+                    | payloadUnitStartIndicator ts -> {-# SCC "concatTsPackets'[StartPacket]" #-} do
                         let (ad, _, pl) = splitPayload (hasAdaptationField ts) (hasPayload ts) (tsPayload ts)
                         go $ IM.insert (tsProgramId ts) (continuityCounter ts, PESPSI (tsProgramId ts) ad pl) dict
                     | otherwise -> go dict
@@ -82,14 +84,16 @@ concatTsPackets' scrambledF unscrambledF = go (IM.empty :: IM.IntMap (Word8, PES
                          then S.splitAt (fromIntegral (S.head b')) (S.tail b')
                          else (b', S.empty)
         in (L.fromStrict a,B.byteString bf,B.byteString p)
+{-# INLINE concatTsPackets' #-}
 
 concatTsPackets :: Monad m => Conduit (TS S.ByteString) m (Either (TS S.ByteString) (PESPSI L.ByteString))
 concatTsPackets = concatTsPackets' (yield . Left) (yield . Right)
 
 concatTsPackets_ :: Monad m => Conduit (TS S.ByteString) m (PESPSI L.ByteString)
 concatTsPackets_ = concatTsPackets' (const $ return ()) yield
+{-# INLINE concatTsPackets_ #-}
 
-data Wrapper = forall a. (Typeable a, Show a) => Wrap (PESPSI a)
+data Wrapper = forall a. (Typeable a, Show a) => Wrap a
 deriving instance Show Wrapper
 
 class PSI a where
@@ -135,7 +139,7 @@ runPsi get = go
 data PAT 
     = PAT
         { patPsiHeader  :: {-#UNPACK#-}!PSIHeader
-        , programPidMap :: !(IM.IntMap Int)
+        , programPidMap :: ![(Int, Int)]
         } deriving(Show, Typeable)
 
 instance PSI PAT where
@@ -168,8 +172,8 @@ pat 0 = runPsi getF
         pid   <- fromIntegral . (0x1FFF .&.) <$> getWord16be
         return $ if genre == 0
                  then m
-                 else IM.insert (fromIntegral genre) pid m
-        ) IM.empty [1 .. ((sectionLength h - 9) `quot` 4)]
+                 else (fromIntegral genre, pid) : m
+        ) [] [1 .. ((sectionLength h - 9) `quot` 4)]
 
 pat _ = const []
 
@@ -178,15 +182,25 @@ data PMT
         { pmtPsiHeader   :: {-#UNPACK#-}!PSIHeader
         , pmtPcrPid      :: {-#UNPACK#-}!Word16
         , pmtDescriptors :: !Descriptors
-        , pmtStreams     :: !(IM.IntMap (Word8, Descriptors))
+        , pmtStreams     :: ![PMTStream]
         }
         deriving Show
+
+data PMTStream 
+    = PMTStream
+        { streamTypeId :: Word8
+        , elementalyPID :: Int
+        , streamDescriptors :: Descriptors
+        } deriving Show
 
 instance PSI PMT where
     header = header . pmtPsiHeader
 
-pmt :: (Int -> Bool) -> PESPSIFunc PMT
-pmt f i | f i       = runPsi getF
+pmt :: Int -> PESPSIFunc PMT
+pmt i = pmt' (== i)
+
+pmt' :: (Int -> Bool) -> PESPSIFunc PMT
+pmt' f i | f i       = runPsi getF
         | otherwise = const []
   where
     getF h = do
@@ -194,15 +208,15 @@ pmt f i | f i       = runPsi getF
         prglen <- fromIntegral . ( 0xFFF .&.) <$> getWord16be
         desc1  <- getDescriptors prglen
         let remain = sectionLength h - fromIntegral prglen - 13
-        PMT h pcrpid desc1 <$> loop IM.empty remain
-    loop dict n
-        | n <= 0    = return dict
+        PMT h pcrpid desc1 <$> loop remain
+    loop n
+        | n <= 0    = return []
         | otherwise = do
             s     <- fromIntegral <$> getWord8
             epid  <- fromIntegral . (0x1FFF .&.) <$> getWord16be
             eslen <- fromIntegral . (0x0FFF .&.) <$> getWord16be
             descs <- getDescriptors (fromIntegral eslen)
-            loop (IM.insert epid (s, descs) dict) (n - 5 - eslen)
+            (PMTStream s epid descs:) <$> loop (n - 5 - eslen)
 
 data Descriptor 
     = StreamIdDescriptor {-#UNPACK#-}!Word8
@@ -323,10 +337,10 @@ multiPESPSI = awaitForever . go
     go END        _ = return ()
     go (f :-> fs) r = case f (pesPsiProgramId r) (pesPsiPayload r) of
         [] -> go fs r
-        m  -> mapM_ (yield . Wrap . (\p -> r{pesPsiPayload = p})) m
+        m  -> mapM_ (yield . Wrap) m
 
-singlePESPSI :: Monad m => PESPSIFunc a -> Conduit (PESPSI L.ByteString) m (PESPSI a)
+singlePESPSI :: Monad m => PESPSIFunc a -> Conduit (PESPSI L.ByteString) m a
 singlePESPSI f = awaitForever $ \r ->
     case f (pesPsiProgramId r) (pesPsiPayload r) of
         [] -> return ()
-        m  -> mapM_ (\a -> yield r{pesPsiPayload = a}) m
+        m  -> mapM_ yield m

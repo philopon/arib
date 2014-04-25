@@ -71,21 +71,22 @@ data TsException
 instance Exception TsException
 
 tsPacket :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
-tsPacket n = go S.empty
+tsPacket n = {-# SCC "tsPacket" #-} go S.empty
   where
     n64 :: Int64
     n64 = fromIntegral n
 
     go beforePayload = do
-        rawPacket <- CB.take n
+        rawPacket <- {-# SCC "tsPacket[take]" #-} CB.take n
         when (L.length rawPacket == n64) $ do
-            packet <- resync n64 beforePayload rawPacket
+            packet <- {-# SCC "tsPacket[resync]" #-} resync n64 beforePayload rawPacket
 
-            let (h,p) = L.splitAt 4 packet
+            let (h,p) = {-# SCC "tsPacket[splitHeader]" #-} L.splitAt 4 packet
             let [_,h1,h2,h3] = L.unpack h
 
             yield $ TS h1 h2 h3 (L.toStrict p)
             go (L.toStrict p)
+{-# INLINE tsPacket #-}
 
 safeIndexL :: L.ByteString -> Int64 -> Maybe Word8
 safeIndexL b n
