@@ -1,6 +1,6 @@
 module Data.Arib.PSI
     (
-    -- * PSI Class/Datatype/Alias
+    -- * PSI Class\/Datatype\/Alias
     PSI(..)
     , PSIHeader(..)
     , PSIFunc

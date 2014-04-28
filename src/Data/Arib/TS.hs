@@ -15,6 +15,7 @@ module Data.Arib.TS
     , tsPackets
     , detectPacketSize
     , TsException(..)
+    , sourceTs
     ) where
 
 import Data.Arib.TS.Internal

@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Data.Arib.TS.Internal where
 
@@ -71,17 +72,17 @@ data TsException
 instance Exception TsException
 
 tsPackets :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
-tsPackets n = {-# SCC "tsPacket" #-} go S.empty
+tsPackets n = {-# SCC "tsPackets" #-} go S.empty
   where
     n64 :: Int64
     n64 = fromIntegral n
 
     go beforePayload = do
-        rawPacket <- {-# SCC "tsPacket[take]" #-} CB.take n
+        rawPacket <- {-# SCC "tsPackets[take]" #-} CB.take n
         when (L.length rawPacket == n64) $ do
-            packet <- {-# SCC "tsPacket[resync]" #-} resync n64 beforePayload rawPacket
+            packet <- {-# SCC "tsPackets[resync]" #-} resync n64 beforePayload rawPacket
 
-            let (h,p) = {-# SCC "tsPacket[splitHeader]" #-} L.splitAt 4 packet
+            let (h,p) = {-# SCC "tsPackets[splitHeader]" #-} L.splitAt 4 packet
             let [_,h1,h2,h3] = L.unpack h
 
             yield $ TS h1 h2 h3 (L.toStrict p)
@@ -125,3 +126,8 @@ detectPacketSize = CL.peek >>= \case
         let m = foldl' (\i a -> IM.insertWith (const succ) (fromIntegral $ S.length a) 1 i) IM.empty $ S.split 0x47 c
         return . succ . fst . maximumBy (compare `on` snd) $ IM.toList (m :: IM.IntMap Int)
 
+sourceTs :: MonadResource m => FilePath -> Producer m (TS S.ByteString)
+sourceTs file = CB.sourceFile file $= do
+    size <- detectPacketSize
+    tsPackets size
+{-# INLINE sourceTs #-}
