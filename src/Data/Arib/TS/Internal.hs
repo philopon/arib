@@ -18,7 +18,6 @@ import Data.List
 import Data.Bits
 import Data.Typeable
 import qualified Data.IntMap.Strict as IM
-import Debug.Trace
 
 import Data.Conduit
 import Numeric
