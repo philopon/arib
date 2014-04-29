@@ -12,6 +12,7 @@ module Data.Arib.TS
     , continuityCounter
     , adaptationFieldControl
     , tsPayload
+    , discontinuityIndicator
     -- * Conduit
     , tsPackets
     , detectPacketSize

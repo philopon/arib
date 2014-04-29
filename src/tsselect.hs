@@ -15,8 +15,7 @@ import System.IO
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 import qualified Data.IntMap.Strict as IM
-import Data.Monoid
-import Data.Word
+import Data.Semigroup
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 
@@ -30,19 +29,13 @@ data Count
             , errors    :: {-#UNPACK#-}!Int
             , scrambles :: {-#UNPACK#-}!Int
             , offset    :: {-#UNPACK#-}!Int
-            , cc        :: {-#UNPACK#-}!Word8
+            , rawTs     :: {-#UNPACK#-}!TS
             } deriving Show
 
-isNextOf :: Word8 -> Word8 -> Bool
-0x0 `isNextOf` 0xf = True
-0x0 `isNextOf` _   = False
-a   `isNextOf` b   = a == b + 1
-
-instance Monoid Count where
-    mempty = Count 0 0 0 0 0 0
-    Count at ad ae as _ ac `mappend` Count bt bd be bs bo bc =
-        let d = if ac `isNextOf` bc then 0 else 1
-            in Count (at + bt) (ad + bd + d) (ae + be) (as + bs) bo ac
+instance Semigroup Count where
+    Count at ad ae as _ ar <> Count bt bd be bs bo br =
+        let d = if ar `isNextOf` continuityCounter br then 0 else 1
+            in Count (at + bt) (ad + bd + d) (ae + be) (as + bs) bo ar
 
 tsToCount :: TS -> Int -> Count
 tsToCount ts o = 
@@ -51,11 +44,11 @@ tsToCount ts o =
           , errors    = if transportErrorIndicator ts then 1 else 0
           , scrambles = if tsTransportScramblingControl ts /= 0 then 1 else 0 
           , offset    = o 
-          , cc        = continuityCounter ts
+          , rawTs     = ts
           }
 
 abstruct :: (IM.IntMap Count, Int) -> TS -> (IM.IntMap Count, Int)
-abstruct (!m,!c) ts =  {-# SCC "abstruct" #-}(IM.insertWith mappend (tsProgramId ts) (tsToCount ts c) m, succ c)
+abstruct (!m,!c) ts =  {-# SCC "abstruct" #-}(IM.insertWith (<>) (tsProgramId ts) (tsToCount ts c) m, succ c)
 {-# INLINE abstruct #-}
 
 showResult :: [(Int, Count)] -> [L.Text]

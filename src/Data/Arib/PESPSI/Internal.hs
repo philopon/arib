@@ -26,10 +26,15 @@ data PESPSI a
         , pesPsiPayload         :: !a
         } deriving (Show, Functor, Typeable)
 
-isNextOf :: Word8 -> Word8 -> Bool
-0x0 `isNextOf` 0xf = True
-0x0 `isNextOf` _   = False
-a   `isNextOf` b   = succ b == a
+isNextOf' :: Word8 -> Word8 -> Bool
+0x0 `isNextOf'` 0xf = True
+0x0 `isNextOf'` _   = False
+a   `isNextOf'` b   = succ b == a
+{-# INLINE isNextOf' #-}
+
+isNextOf :: TS -> Word8 -> Bool
+isNextOf ts w = not (discontinuityIndicator ts) || isNextOf' (continuityCounter ts) w
+{-# INLINE isNextOf #-}
 
 appendPacket :: Monoid a => PESPSI a -> a -> PESPSI a
 PESPSI pid ad ab `appendPacket` bs = PESPSI pid ad (ab <> bs)
@@ -48,7 +53,7 @@ concatTsPackets' scrambledF unscrambledF =
             | otherwise -> case IM.lookup (tsProgramId ts) dict of
                 Just (cc, acc)
                     -- Continued Packet
-                    | continuityCounter ts `isNextOf` cc && not (payloadUnitStartIndicator ts) ->
+                    | ts `isNextOf` cc && not (payloadUnitStartIndicator ts) ->
                         {-# SCC "concatTsPackets'[ContinuedPacket]" #-}
                         go $ IM.insert (tsProgramId ts) 
                         (continuityCounter ts, acc `appendPacket` B.byteString (tsPayload ts)) dict

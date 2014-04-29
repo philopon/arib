@@ -68,6 +68,12 @@ tsPayload :: TS -> S.ByteString
 tsPayload = S.drop 4 . tsPacket
 {-# INLINE tsPayload #-}
 
+discontinuityIndicator :: TS -> Bool
+discontinuityIndicator ts 
+    | hasAdaptationField ts = testBit (S.index (tsPacket ts) 5) 7
+    | otherwise             = True
+{-# INLINE discontinuityIndicator #-}
+
 data TsException
     = ReSyncFailed
     deriving (Show,Typeable)
