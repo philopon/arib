@@ -18,6 +18,7 @@ import Data.List
 import Data.Bits
 import Data.Typeable
 import qualified Data.IntMap.Strict as IM
+import Debug.Trace
 
 import Data.Conduit
 import Numeric
@@ -114,8 +115,12 @@ detectPacketSize :: Monad m => Consumer S.ByteString m Int
 detectPacketSize = CL.peek >>= \case
     Nothing -> return 0
     Just c  -> do
-        let m = foldl' (\i a -> IM.insertWith (const succ) (fromIntegral $ S.length a) 1 i) IM.empty $ S.split 0x47 c
-        return . succ . fst . maximumBy (compare `on` snd) $ IM.toList (m :: IM.IntMap Int)
+        let m1  = map (succ . S.length) . tail $ S.split 0x47 c
+            m2  = snd $ mapAccumL (\a i -> (i, a+i)) 0 m1
+            m1c = foldl' (\d i -> IM.insertWith (+) i 1 d) IM.empty m1
+            m2c = IM.map (`quot` 2) $ foldl' (\d i -> IM.insertWith (+) i 1 d) IM.empty m2
+            m   = IM.filterWithKey (\k _ -> 188 <= k) . IM.insertWith (flip const) 188 1 $ IM.union m1c m2c
+        return . fst . maximumBy (compare `on` snd) $ IM.toList (m :: IM.IntMap Int)
 
 sourceTs :: MonadResource m => FilePath -> Producer m TS
 sourceTs file = {-# SCC "sourceTs" #-} CB.sourceFile file $= do
