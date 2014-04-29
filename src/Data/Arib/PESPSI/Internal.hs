@@ -35,9 +35,9 @@ appendPacket :: Monoid a => PESPSI a -> a -> PESPSI a
 PESPSI pid ad ab `appendPacket` bs = PESPSI pid ad (ab <> bs)
 
 concatTsPackets' :: Monad m 
-                 => (TS S.ByteString -> ConduitM (TS S.ByteString) o m ())
-                 -> (PESPSI L.ByteString -> ConduitM (TS S.ByteString) o m ())
-                 -> ConduitM (TS S.ByteString) o m ()
+                 => (TS -> ConduitM TS o m ())
+                 -> (PESPSI L.ByteString -> ConduitM TS o m ())
+                 -> ConduitM TS o m ()
 concatTsPackets' scrambledF unscrambledF =
     {-# SCC "concatTsPackets'" #-} go (IM.empty :: IM.IntMap (Word8, PESPSI B.Builder))
   where
@@ -77,10 +77,10 @@ concatTsPackets' scrambledF unscrambledF =
         in (L.fromStrict a,B.byteString bf,B.byteString p)
 {-# INLINE concatTsPackets' #-}
 
-concatTsPackets :: Monad m => Conduit (TS S.ByteString) m (Either (TS S.ByteString) (PESPSI L.ByteString))
+concatTsPackets :: Monad m => Conduit TS m (Either TS (PESPSI L.ByteString))
 concatTsPackets = concatTsPackets' (yield . Left) (yield . Right)
 
-concatTsPackets_ :: Monad m => Conduit (TS S.ByteString) m (PESPSI L.ByteString)
+concatTsPackets_ :: Monad m => Conduit TS m (PESPSI L.ByteString)
 concatTsPackets_ = concatTsPackets' (const $ return ()) yield
 {-# INLINE concatTsPackets_ #-}
 

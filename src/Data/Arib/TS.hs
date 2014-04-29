@@ -1,6 +1,6 @@
 module Data.Arib.TS
     ( -- * TS Data type
-    TS(tsPayload)
+    TS
     -- * TS Header Getter
     , transportErrorIndicator
     , hasPayload
@@ -11,11 +11,14 @@ module Data.Arib.TS
     , tsTransportScramblingControl
     , continuityCounter
     , adaptationFieldControl
+    , tsPayload
     -- * Conduit
     , tsPackets
     , detectPacketSize
     , TsException(..)
     , sourceTs
+    , sinkTs
+    , conduitTs
     ) where
 
 import Data.Arib.TS.Internal

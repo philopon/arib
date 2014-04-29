@@ -12,12 +12,10 @@ import Control.Applicative
 import Control.Monad.Trans.Resource
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
-import Data.Int
 import Data.Word
 import Data.Function
 import Data.List
 import Data.Bits
-import Data.Monoid
 import Data.Typeable
 import qualified Data.IntMap.Strict as IM
 
@@ -26,15 +24,10 @@ import Numeric
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List   as CL
 
-data TS a = 
-    TS { header1   :: {-#UNPACK#-}!Word8
-       , header2   :: {-#UNPACK#-}!Word8
-       , header3   :: {-#UNPACK#-}!Word8
-       , tsPayload :: a
-       } deriving Functor
+newtype TS = TS { tsPacket :: S.ByteString }
 
-instance Show a => Show (TS a) where
-    show ts@TS{tsPayload} =
+instance Show TS where
+    show ts =
         "TS {transportErrorIndicator = "    ++ show (transportErrorIndicator ts) ++
         ", payloadUnitStartIndicator = "    ++ show (payloadUnitStartIndicator ts) ++
         ", transportPriority = "            ++ show (transportPriority ts) ++
@@ -42,82 +35,80 @@ instance Show a => Show (TS a) where
         ", tsTransportScramblingControl = " ++ show (tsTransportScramblingControl ts) ++
         ", adaptationFieldControl = "       ++ show (adaptationFieldControl ts) ++
         ", continuityCounter = 0x"          ++ showHex (continuityCounter ts)
-        ", tsPayload = "                    ++ show tsPayload ++
+        ", tsPayload = "                    ++ show (tsPayload ts) ++
         "}"                                            
                                                        
-instance Monoid a => Monoid (TS a) where
-    mempty = TS 0 0 0 mempty
-    TS _ _ _ a `mappend` TS b1 b2 b3 b = TS b1 b2 b3 (a <> b)
-
 transportErrorIndicator, payloadUnitStartIndicator, transportPriority,
-    hasAdaptationField, hasPayload :: TS a -> Bool
-transportErrorIndicator   TS{header1} = testBit header1 7
-payloadUnitStartIndicator TS{header1} = testBit header1 6
-transportPriority         TS{header1} = testBit header1 5
-hasAdaptationField        TS{header3} = testBit header3 5
-hasPayload                TS{header3} = testBit header3 4
+    hasAdaptationField, hasPayload :: TS -> Bool
+transportErrorIndicator   TS{tsPacket} = testBit (S.index tsPacket 1) 7
+payloadUnitStartIndicator TS{tsPacket} = testBit (S.index tsPacket 1) 6
+transportPriority         TS{tsPacket} = testBit (S.index tsPacket 1) 5
+hasAdaptationField        TS{tsPacket} = testBit (S.index tsPacket 3) 5
+hasPayload                TS{tsPacket} = testBit (S.index tsPacket 3) 4
+{-# INLINE transportErrorIndicator   #-}
+{-# INLINE payloadUnitStartIndicator #-}
+{-# INLINE transportPriority         #-}
+{-# INLINE hasAdaptationField        #-}
+{-# INLINE hasPayload                #-}
 
-tsProgramId :: TS a -> Int
-tsProgramId TS{header1, header2} =
-    shiftL (fromIntegral $ header1 .&. 0x1F) 8 .|. fromIntegral header2
+tsProgramId :: TS -> Int
+tsProgramId TS{tsPacket} =
+    shiftL (fromIntegral $ (S.index tsPacket 1) .&. 0x1F) 8 .|. fromIntegral (S.index tsPacket 2)
+{-# INLINE tsProgramId #-}
 
-tsTransportScramblingControl, adaptationFieldControl, continuityCounter :: TS a -> Word8
-tsTransportScramblingControl TS{header3} = shiftR header3 6
-adaptationFieldControl       TS{header3} = shiftR header3 4 .&. 0x3
-continuityCounter            TS{header3} = header3 .&. 0xF
+tsTransportScramblingControl, adaptationFieldControl, continuityCounter :: TS -> Word8
+tsTransportScramblingControl TS{tsPacket} = shiftR (S.index tsPacket 3) 6
+adaptationFieldControl       TS{tsPacket} = shiftR (S.index tsPacket 3) 4 .&. 0x3
+continuityCounter            TS{tsPacket} =        (S.index tsPacket 3)   .&. 0xF
+{-# INLINE tsTransportScramblingControl #-}
+{-# INLINE adaptationFieldControl #-}
+{-# INLINE continuityCounter #-}
+
+tsPayload :: TS -> S.ByteString
+tsPayload = S.drop 4 . tsPacket
+{-# INLINE tsPayload #-}
 
 data TsException
     = ReSyncFailed
     deriving (Show,Typeable)
 instance Exception TsException
 
-tsPackets :: MonadThrow m => Int -> Conduit S.ByteString m (TS S.ByteString)
+tsPackets :: MonadThrow m => Int -> Conduit S.ByteString m TS
 tsPackets n = {-# SCC "tsPackets" #-} go S.empty
   where
-    n64 :: Int64
-    n64 = fromIntegral n
-
     go beforePayload = do
-        rawPacket <- {-# SCC "tsPackets[take]" #-} CB.take n
-        when (L.length rawPacket == n64) $ do
-            packet <- {-# SCC "tsPackets[resync]" #-} resync n64 beforePayload rawPacket
+        rawPacket <- {-# SCC "tsPackets[take]" #-} L.toStrict <$> CB.take n
+        when (S.length rawPacket == n) $ do
+            packet <- {-# SCC "tsPackets[resync]" #-} resync n beforePayload rawPacket
 
-            let (h,p) = {-# SCC "tsPackets[splitHeader]" #-} L.splitAt 4 packet
-            let [_,h1,h2,h3] = L.unpack h
-
-            yield $ TS h1 h2 h3 (L.toStrict p)
-            go (L.toStrict p)
+            yield $ TS packet
+            go packet
 {-# INLINE tsPackets #-}
-
-safeIndexL :: L.ByteString -> Int64 -> Maybe Word8
-safeIndexL b n
-    | n < 0           = Nothing
-    | n >= L.length b = Nothing
-    | otherwise       = Just $ L.index b n
 
 safeIndexS :: S.ByteString -> Int -> Maybe Word8
 safeIndexS b n
     | n < 0           = Nothing
     | n >= S.length b = Nothing
     | otherwise       = Just $ S.index b n
+{-# INLINE safeIndexS #-}
 
 resync :: MonadThrow m
-       => Int64 -> S.ByteString -> L.ByteString -> ConduitM S.ByteString a m L.ByteString
+       => Int -> S.ByteString -> S.ByteString -> ConduitM S.ByteString a m S.ByteString
 resync len bp rp
-    | L.head rp == 0x47 = return rp
+    | S.head rp == 0x47 = return rp
     | otherwise         = go 1
   where
     bpLen = S.length bp
     go i
         | safeIndexS bp (bpLen - i) == Just 0x47 = do
-            let (res,lo) = L.splitAt len $ L.fromStrict (S.drop (bpLen - i) bp) `L.append` rp
-            leftover (L.toStrict lo)
+            let (res,lo) = S.splitAt len $ (S.drop (bpLen - i) bp) `S.append` rp
+            leftover lo
             return res
 
-        | safeIndexL rp (fromIntegral i - 1) == Just 0x47 =
-            (L.drop (fromIntegral i - 1) rp `L.append`) <$> CB.take (i - 1)
+        | safeIndexS rp (i - 1) == Just 0x47 =
+            (S.drop (i - 1) rp `S.append`) <$> (L.toStrict <$> CB.take (i - 1))
 
-        | otherwise = if len > fromIntegral i then go (i + 1) else monadThrow ReSyncFailed
+        | otherwise = if len > i then go (i + 1) else monadThrow ReSyncFailed
 
 detectPacketSize :: Monad m => Consumer S.ByteString m Int
 detectPacketSize = CL.peek >>= \case
@@ -126,8 +117,15 @@ detectPacketSize = CL.peek >>= \case
         let m = foldl' (\i a -> IM.insertWith (const succ) (fromIntegral $ S.length a) 1 i) IM.empty $ S.split 0x47 c
         return . succ . fst . maximumBy (compare `on` snd) $ IM.toList (m :: IM.IntMap Int)
 
-sourceTs :: MonadResource m => FilePath -> Producer m (TS S.ByteString)
-sourceTs file = CB.sourceFile file $= do
+sourceTs :: MonadResource m => FilePath -> Producer m TS
+sourceTs file = {-# SCC "sourceTs" #-} CB.sourceFile file $= do
     size <- detectPacketSize
     tsPackets size
 {-# INLINE sourceTs #-}
+
+sinkTs :: MonadResource m => FilePath -> Consumer TS m ()
+sinkTs file = {-# SCC "sinkTs" #-} CL.map tsPacket =$ CB.sinkFile file
+
+conduitTs :: MonadResource m => FilePath -> Conduit TS m TS
+conduitTs file = {-# SCC "conduitTs" #-} CL.map tsPacket =$= CB.conduitFile file =$= CL.map TS
+
