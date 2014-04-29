@@ -13,6 +13,7 @@ category:            Codec
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
+data-files:          charset/*.txt
 
 flag tsselect
   default: True
