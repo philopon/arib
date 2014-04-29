@@ -38,6 +38,7 @@ isNextOf ts w = not (discontinuityIndicator ts) || isNextOf' (continuityCounter 
 
 appendPacket :: Monoid a => PESPSI a -> a -> PESPSI a
 PESPSI pid ad ab `appendPacket` bs = PESPSI pid ad (ab <> bs)
+{-# INLINE appendPacket #-}
 
 concatTsPackets' :: Monad m 
                  => (TS -> ConduitM TS o m ())
@@ -84,6 +85,7 @@ concatTsPackets' scrambledF unscrambledF =
 
 concatTsPackets :: Monad m => Conduit TS m (Either TS (PESPSI L.ByteString))
 concatTsPackets = concatTsPackets' (yield . Left) (yield . Right)
+{-# INLINE concatTsPackets #-}
 
 concatTsPackets_ :: Monad m => Conduit TS m (PESPSI L.ByteString)
 concatTsPackets_ = concatTsPackets' (const $ return ()) yield

@@ -45,9 +45,10 @@ data Event
 
 instance PSI EIT where
     header = header . eitPsiHeader
+    {-# INLINE header #-}
 
 eit :: PSIFunc EIT
-eit i | i `elem` [0x12,0x26,0x27] = runPsi getF
+eit i | i `elem` [0x12,0x26,0x27] = {-# SCC "eit" #-} runPsi getF
       | otherwise                 = const []
   where
     getF h = do
@@ -55,7 +56,7 @@ eit i | i `elem` [0x12,0x26,0x27] = runPsi getF
         onid <- getWord16be
         slsn <- getWord8
         ltid <- getWord8
-        EIT h tsid onid slsn ltid <$> loop (fromIntegral $ sectionLength h - 15 :: Int)
+        EIT h tsid onid slsn ltid <$> {-# SCC "eit[events]" #-} loop (fromIntegral $ sectionLength h - 15 :: Int)
 
     loop n 
         | n <= 0    = return []

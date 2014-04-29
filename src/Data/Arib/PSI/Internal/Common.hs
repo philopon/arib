@@ -41,31 +41,33 @@ class PSI a where
   {-# INLINE lastSectionNumber #-}
 
 checkAndGetHeader :: Get PSIHeader
-checkAndGetHeader = do
-    lookAhead $ do
+checkAndGetHeader = {-# SCC "checkAndGetHeader" #-} do
+    {-# SCC "checkAndGetHeader[check]" #-} lookAhead $ do
         [h,u,l] <- S.unpack <$> getByteString 3
         let len = shiftL (fromIntegral u .&. 0xf) 8 .|. fromIntegral l
         s <- getLazyByteString len
         unless (crc32 (h `L.cons` u `L.cons` l `L.cons` s) == 0) $ fail "CRC32 check failed."
-    PSIHeader <$> getWord64be
+    {-# SCC "checkAndGetHeader[get]" #-} PSIHeader <$> getWord64be
+{-# INLINE checkAndGetHeader #-}
 
 runPsi :: (PSIHeader -> Get a) -> L.ByteString -> [a]
-runPsi get = go
+runPsi get = {-# SCC "runPsi" #-} go
   where
     go s = case runGetOrFail ((checkAndGetHeader >>= get) <* skip 4) s of
         Left _ -> []
         Right (s',_,p) | L.null s'         -> [p]
                        | L.head s' == 0xFF -> [p]
                        | otherwise         -> p : go s'
+{-# INLINE runPsi #-}
 
 newtype PSIHeader = PSIHeader Word64
 instance Show PSIHeader where
-    show h = "PSIHeader {tableId = " ++ show (tableId h) ++
-             ", sectionLength = " ++ show (sectionLength h) ++
-             ", versionNumber = "          ++ show (versionNumber h) ++
+    show h = "PSIHeader {tableId = "     ++ show (tableId h) ++
+             ", sectionLength = "        ++ show (sectionLength h) ++
+             ", versionNumber = "        ++ show (versionNumber h) ++
              ", currentNextIndicator = " ++ show (currentNextIndicator h) ++
-             ", sectionNumber = " ++ show (sectionNumber h) ++
-             ", lastSectionNumber = " ++ show (lastSectionNumber h) ++
+             ", sectionNumber = "        ++ show (sectionNumber h) ++
+             ", lastSectionNumber = "    ++ show (lastSectionNumber h) ++
              "}"
 
 instance PSI PSIHeader where

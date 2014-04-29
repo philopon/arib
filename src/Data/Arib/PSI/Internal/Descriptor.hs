@@ -31,7 +31,7 @@ data Descriptor
     deriving Show
 
 getDescriptor :: Get (Int, Int, Descriptor)
-getDescriptor = getWord8 >>= \case
+getDescriptor = {-# SCC "getDescriptor" #-} getWord8 >>= \case
     0x52 -> getWord8 >> ((3,0x52,) . StreamIdDescriptor <$> getWord8)
     0x4D -> do
         len  <- getWord8
@@ -42,6 +42,7 @@ getDescriptor = getWord8 >>= \case
         (fromIntegral $ len + 2, 0x4d,) . ShortEventDescriptor lang titl <$> (decodeUtf8 =<< getLazyByteString dLen)
     w    -> getWord8 >>= \len -> (fromIntegral $ len + 2, fromIntegral w,) . Raw <$>
             (getLazyByteString (fromIntegral len))
+{-# INLINE getDescriptor #-}
 
 newtype Descriptors = Descriptors (IM.IntMap Descriptor)
                     deriving Show
@@ -50,10 +51,12 @@ streamIdDescriptor :: Descriptors -> Maybe Word8
 streamIdDescriptor (Descriptors d) = IM.lookup 0x52 d >>= unWrap
   where unWrap (StreamIdDescriptor w) = Just w
         unWrap _ = Nothing
+{-# INLINE streamIdDescriptor #-}
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors = go IM.empty
+getDescriptors = {-# SCC "getDescriptors" #-} go IM.empty
   where
     go dict len 
         | len <= 0  = return $ Descriptors dict
         | otherwise = getDescriptor >>= \(l,i,d) -> go (IM.insert i d dict) (len - l)
+{-# INLINE getDescriptors #-}

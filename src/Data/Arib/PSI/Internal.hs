@@ -18,6 +18,7 @@ import Data.Arib.PSI.Internal.Common
 
 raw :: PSIFunc L.ByteString
 raw _ = (:[])
+{-# INLINE raw #-}
 
 data Wrapper = forall a. (Typeable a, Show a) => Wrap a
 deriving instance Show Wrapper
@@ -26,6 +27,7 @@ type WrappedFunc  = PESPSI L.ByteString -> [Wrapper]
 
 wrap :: (Typeable a, Show a) => (PSIFunc a) -> WrappedFunc
 wrap f p@PESPSI{..} = (\b -> Wrap $ p {pesPsiPayload = b}) <$> f pesPsiProgramId pesPsiPayload 
+{-# INLINE wrap #-}
 
 data WrappedFuncs = forall a. (Typeable a, Show a) => (PSIFunc a) :-> WrappedFuncs
                   | END 
@@ -34,6 +36,7 @@ infixr -|
 
 (-|) :: (Typeable a, Typeable b, Show a, Show b) => PSIFunc a -> PSIFunc b -> WrappedFuncs
 a -| b = a :-> b :-> END
+{-# INLINE (-|) #-}
 
 multiPSI :: Monad m => WrappedFuncs -> Conduit (PESPSI L.ByteString) m Wrapper
 multiPSI = awaitForever . go
@@ -42,9 +45,11 @@ multiPSI = awaitForever . go
     go (f :-> fs) r = case f (pesPsiProgramId r) (pesPsiPayload r) of
         [] -> go fs r
         m  -> mapM_ (yield . Wrap) m
+{-# INLINE multiPSI #-}
 
 singlePSI :: Monad m => PSIFunc a -> Conduit (PESPSI L.ByteString) m a
 singlePSI f = awaitForever $ \r ->
     case f (pesPsiProgramId r) (pesPsiPayload r) of
         [] -> return ()
         m  -> mapM_ yield m
+{-# INLINE singlePSI #-}

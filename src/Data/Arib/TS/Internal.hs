@@ -37,7 +37,7 @@ instance Show TS where
         ", continuityCounter = 0x"          ++ showHex (continuityCounter ts)
         ", tsPayload = "                    ++ show (tsPayload ts) ++
         "}"                                            
-                                                       
+
 transportErrorIndicator, payloadUnitStartIndicator, transportPriority,
     hasAdaptationField, hasPayload :: TS -> Bool
 transportErrorIndicator   TS{tsPacket} = testBit (S.index tsPacket 1) 7
@@ -83,7 +83,8 @@ tsPackets :: MonadThrow m => Int -> Conduit S.ByteString m TS
 tsPackets n = {-# SCC "tsPackets" #-} go S.empty
   where
     go beforePayload = do
-        rawPacket <- {-# SCC "tsPackets[take]" #-} L.toStrict <$> CB.take n
+        rawPacket' <- {-# SCC "tsPackets[take]" #-} CB.take n
+        let rawPacket = {-# SCC "tsPackets[toStrict]" #-} L.toStrict rawPacket'
         when (S.length rawPacket == n) $ do
             packet <- {-# SCC "tsPackets[resync]" #-} resync n beforePayload rawPacket
 
@@ -117,7 +118,7 @@ resync len bp rp
         | otherwise = if len > i then go (i + 1) else monadThrow ReSyncFailed
 
 detectPacketSize :: Monad m => Consumer S.ByteString m Int
-detectPacketSize = CL.peek >>= \case
+detectPacketSize = {-# SCC "detectPacketSize" #-} CL.peek >>= \case
     Nothing -> return 0
     Just c  -> do
         let m1  = map (succ . S.length) . tail $ S.split 0x47 c
@@ -135,7 +136,8 @@ sourceTs file = {-# SCC "sourceTs" #-} CB.sourceFile file $= do
 
 sinkTs :: MonadResource m => FilePath -> Consumer TS m ()
 sinkTs file = {-# SCC "sinkTs" #-} CL.map tsPacket =$ CB.sinkFile file
+{-# INLINE sinkTs #-}
 
 conduitTs :: MonadResource m => FilePath -> Conduit TS m TS
 conduitTs file = {-# SCC "conduitTs" #-} CL.map tsPacket =$= CB.conduitFile file =$= CL.map TS
-
+{-# INLINE conduitTs #-}

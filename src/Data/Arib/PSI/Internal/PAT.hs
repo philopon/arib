@@ -27,7 +27,7 @@ instance PSI PAT where
     {-# INLINE header #-}
 
 pat :: PSIFunc PAT
-pat 0 = runPsi getF
+pat 0 = {-# SCC "pat" #-} runPsi getF
   where
     getF h = PAT h <$> foldM (\m _ -> do
         genre <- getWord16be
@@ -38,4 +38,5 @@ pat 0 = runPsi getF
         ) [] [1 .. ((sectionLength h - 9) `quot` 4)]
 
 pat _ = const []
+{-# INLINE pat #-}
 

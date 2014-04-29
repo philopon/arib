@@ -34,12 +34,14 @@ data PMTStream
 
 instance PSI PMT where
     header = header . pmtPsiHeader
+    {-# INLINE header #-}
 
 pmt :: Int -> PSIFunc PMT
 pmt i = pmt' (== i)
+{-# INLINE pmt #-}
 
 pmt' :: (Int -> Bool) -> PSIFunc PMT
-pmt' f i | f i       = runPsi getF
+pmt' f i | f i      = {-# SCC "pmt'" #-} runPsi getF
         | otherwise = const []
   where
     getF h = do
@@ -47,7 +49,7 @@ pmt' f i | f i       = runPsi getF
         prglen <- fromIntegral . ( 0xFFF .&.) <$> getWord16be
         desc1  <- getDescriptors prglen
         let remain = sectionLength h - fromIntegral prglen - 13
-        PMT h pcrpid desc1 <$> loop remain
+        PMT h pcrpid desc1 <$> {-# SCC "pmt'[stream]" #-} loop remain
     loop n
         | n <= 0    = return []
         | otherwise = do
@@ -56,4 +58,4 @@ pmt' f i | f i       = runPsi getF
             eslen <- fromIntegral . (0x0FFF .&.) <$> getWord16be
             descs <- getDescriptors (fromIntegral eslen)
             (PMTStream s epid descs:) <$> loop (n - 5 - eslen)
-
+{-# INLINE pmt' #-}
