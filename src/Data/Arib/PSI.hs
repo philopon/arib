@@ -1,7 +1,7 @@
 module Data.Arib.PSI
     (
     -- * PSI Class\/Datatype\/Alias
-    PSI(..)
+    HasPSIHeader(..)
     , PSIHeader(..)
     , PSIFunc
     -- * PSI Tables
@@ -9,7 +9,7 @@ module Data.Arib.PSI
     -- ** Program Association Table(tableId:0x0000) 
     , PAT(..), pat
     -- ** Program Map Table(tableId:assigned by PAT)
-    , PMT(..), PMTStream(..), pmt, pmt'
+    , PMT(..), PMTStream(..), pmt, pmt', pmt_
     -- ** Event Information Table(tableId:0x0012,0x0026,0x0027)
     , EIT(..), Event(..), eit
 
@@ -22,9 +22,9 @@ module Data.Arib.PSI
     , singlePSI
 
     -- * Heterogeneous PSI Conduit
-    , WrappedFunc
     , Wrapper(..)
-    , WrappedFuncs(..)
+    , unWrap
+    , PSIs(..)
     , (-|)
     , multiPSI
     ) where

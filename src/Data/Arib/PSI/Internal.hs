@@ -8,48 +8,65 @@
 
 module Data.Arib.PSI.Internal where
 
-import Control.Applicative
+import Control.Monad
+
 import qualified Data.ByteString.Lazy as L
 import Data.Conduit
 import Data.Typeable
+import Data.Tagged
 
 import Data.Arib.PESPSI
 import Data.Arib.PSI.Internal.Common
 
-raw :: PSIFunc L.ByteString
-raw _ = (:[])
-{-# INLINE raw #-}
-
 data Wrapper = forall a. (Typeable a, Show a) => Wrap a
 deriving instance Show Wrapper
 
-type WrappedFunc  = PESPSI L.ByteString -> [Wrapper]
+unWrap :: PSI a => PSITag a -> Wrapper -> Maybe a
+unWrap _ (Wrap a) = cast a
+{-# INLINE unWrap #-}
 
-wrap :: (Typeable a, Show a) => (PSIFunc a) -> WrappedFunc
-wrap f p@PESPSI{..} = (\b -> Wrap $ p {pesPsiPayload = b}) <$> f pesPsiProgramId pesPsiPayload 
-{-# INLINE wrap #-}
-
-data WrappedFuncs = forall a. (Typeable a, Show a) => (PSIFunc a) :-> WrappedFuncs
-                  | END 
+data PSIs = forall a. PSI a => PSITag a :-> PSIs
+          | END 
 infixr :->
 infixr -|
 
-(-|) :: (Typeable a, Typeable b, Show a, Show b) => PSIFunc a -> PSIFunc b -> WrappedFuncs
+(-|) :: (PSI a, PSI b) => PSITag a -> PSITag b -> PSIs
 a -| b = a :-> b :-> END
 {-# INLINE (-|) #-}
 
-multiPSI :: Monad m => WrappedFuncs -> Conduit (PESPSI L.ByteString) m Wrapper
+-- | parse multiple PSI.
+--
+-- @
+-- ex :: Monad m => Conduit (PESPSI L.ByteString) m Wrapper
+-- ex = multiPSI (eit :-> pat -| raw)
+-- @
+--
+-- ex conduit parse EIT(programId \`elem\` [0x12, 0x26, 0x27]) and PAT(programId == 0x00),
+-- then packet which has other programId, pass through.
+--
+-- all elements wrapped around by 'Wrapper', thus you should unWrap to use it.
+--
+-- @
+-- Just h <- sourceTs file $$ concatTsPackets_ =$ ex =$ CL.head
+-- let _ = h            :: Wrapper
+--     _ = unWrap eit h :: Maybe EIT
+-- @
+--
+multiPSI :: Monad m => PSIs -> Conduit (PESPSI L.ByteString) m Wrapper
 multiPSI = awaitForever . go
   where
     go END        _ = return ()
-    go (f :-> fs) r = case f (pesPsiProgramId r) (pesPsiPayload r) of
-        [] -> go fs r
-        m  -> mapM_ (yield . Wrap) m
+    go (t :-> ts) r 
+        | untag t (pesPsiProgramId r) = case getPSI t (pesPsiPayload r) of
+            [] -> return ()
+            m  -> mapM_ (yield . Wrap) m
+        | otherwise = go ts r
 {-# INLINE multiPSI #-}
 
-singlePSI :: Monad m => PSIFunc a -> Conduit (PESPSI L.ByteString) m a
-singlePSI f = awaitForever $ \r ->
-    case f (pesPsiProgramId r) (pesPsiPayload r) of
+singlePSI :: (Monad m, PSI a) => PSITag a -> Conduit (PESPSI L.ByteString) m a
+singlePSI t = awaitForever $ \r -> when (untag t $ pesPsiProgramId r) $
+    case getPSI t (pesPsiPayload r) of
         [] -> return ()
         m  -> mapM_ yield m
 {-# INLINE singlePSI #-}
+

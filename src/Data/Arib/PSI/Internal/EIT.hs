@@ -16,6 +16,8 @@ import Data.Bits
 import Data.Word
 import Data.Binary.Get
 import Data.Time
+import Data.Tagged
+import Data.Typeable
 
 import Data.Arib.PSI.Internal.Common
 import Data.Arib.PSI.Internal.Descriptor
@@ -28,7 +30,7 @@ data EIT
         , segmentLastSectionNumber :: {-#UNPACK#-}!Word8
         , lastTableId              :: {-#UNPACK#-}!Word8
         , eitEvents                :: ![Event]
-        } deriving Show
+        } deriving (Show, Typeable)
 
 data Event
     = Event 
@@ -41,41 +43,48 @@ data Event
         , eventStatus      :: {-#UNPACK#-}!Word16
         , eventScramble    :: !Bool 
         , eventDescriptors :: !Descriptors
-        } deriving Show
+        } deriving (Show, Typeable)
 
-instance PSI EIT where
+instance HasPSIHeader EIT where
     header = header . eitPsiHeader
     {-# INLINE header #-}
 
-eit :: PSIFunc EIT
-eit i | i `elem` [0x12,0x26,0x27] = {-# SCC "eit" #-} runPsi getF
-      | otherwise                 = const []
+eit :: PSITag EIT
+eit = Tagged isTarget
   where
-    getF h = do
-        tsid <- getWord16be
-        onid <- getWord16be
-        slsn <- getWord8
-        ltid <- getWord8
-        EIT h tsid onid slsn ltid <$> {-# SCC "eit[events]" #-} loop (fromIntegral $ sectionLength h - 15 :: Int)
+    isTarget i | i  == 0x12 || i == 0x26 || i == 0x27 = True
+               | otherwise                            = False
 
-    loop n 
-        | n <= 0    = return []
-        | otherwise = do
-            eid <- getWord16be
-            tim <- getWord64be
-            let mjd = ModifiedJulianDay . fromIntegral $ shiftR tim 48
-                tod = TimeOfDay (fromIntegral $ bcd 40 tim) (fromIntegral $ bcd 32 tim) (fromIntegral $ bcd 24 tim)
-                dur = TimeOfDay (fromIntegral $ bcd 16 tim) (fromIntegral $ bcd  8 tim) (fromIntegral $ bcd  0 tim)
-            st  <- getWord16be
-            let stt = shiftR  st 13
-                scr = testBit st 12
-                len = fromIntegral $ 0xFFF .&. st
-            Descriptors descs <- getDescriptors len
-            let ShortEventDescriptor lang title desc = case IM.lookup 0x4D descs of
-                    Nothing -> ShortEventDescriptor S.empty L.empty L.empty
-                    Just e  -> e
 
-            (Event eid (LocalTime mjd tod) (timeOfDayToTime dur) lang title desc
-                stt scr (Descriptors $ IM.delete 0x4D descs) :) <$> loop (n - len - 12)
-    bcd s w = shiftR w s .&. 0xf
+instance PSI EIT where
+    getPSI _ = {-# SCC "eit" #-} runPsi getF
+      where
+        getF h = do
+            tsid <- getWord16be
+            onid <- getWord16be
+            slsn <- getWord8
+            ltid <- getWord8
+            EIT h tsid onid slsn ltid <$> {-# SCC "eit[events]" #-} loop (fromIntegral $ sectionLength h - 15 :: Int)
+          where 
+            loop n 
+                | n <= 0    = return []
+                | otherwise = do
+                    eid <- getWord16be
+                    tim <- getWord64be
+                    let mjd = ModifiedJulianDay . fromIntegral $ shiftR tim 48
+                        tod = TimeOfDay (fromIntegral $ bcd 40 tim) (fromIntegral $ bcd 32 tim) (fromIntegral $ bcd 24 tim)
+                        dur = TimeOfDay (fromIntegral $ bcd 16 tim) (fromIntegral $ bcd  8 tim) (fromIntegral $ bcd  0 tim)
+                    st  <- getWord16be
+                    let stt = shiftR  st 13
+                        scr = testBit st 12
+                        len = fromIntegral $ 0xFFF .&. st
+                    Descriptors descs <- getDescriptors len
+                    let ShortEventDescriptor lang title desc = case IM.lookup 0x4D descs of
+                            Nothing -> ShortEventDescriptor S.empty L.empty L.empty
+                            Just e  -> e
+
+                    (Event eid (LocalTime mjd tod) (timeOfDayToTime dur) lang title desc
+                        stt scr (Descriptors $ IM.delete 0x4D descs) :) <$> loop (n - len - 12)
+            bcd s w = shiftR w s .&. 0xf
+    {-# INLINE getPSI #-}
 

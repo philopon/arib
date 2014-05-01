@@ -15,10 +15,12 @@ import qualified Data.ByteString.Lazy as L
 import Data.Bits
 import Data.Word
 import Data.Binary.Get
+import Data.Typeable
+import Data.Tagged
 
 import Data.Arib.CRC
 
-class PSI a where
+class HasPSIHeader a where
   header        :: a -> Word64
   tableId       :: a -> Word8
   tableId a = fromIntegral $ shiftR (header a) 56
@@ -70,12 +72,26 @@ instance Show PSIHeader where
              ", lastSectionNumber = "    ++ show (lastSectionNumber h) ++
              "}"
 
-instance PSI PSIHeader where
+instance HasPSIHeader PSIHeader where
     header (PSIHeader h) = h
     {-# INLINE header #-}
 
-instance PSI Word64 where
+instance HasPSIHeader Word64 where
     header = id
     {-# INLINE header #-}
 
 type PSIFunc a = Int -> L.ByteString -> [a]
+
+type PSITag a = Tagged a (Int -> Bool)
+
+class (Typeable a, Show a) => PSI a where
+  getPSI   :: PSITag a  -> L.ByteString -> [a]
+
+raw :: PSITag L.ByteString
+raw = Tagged (const True)
+{-# INLINE raw #-}
+
+instance PSI L.ByteString where
+    getPSI   _   = (:[])
+    {-# INLINE getPSI #-}
+

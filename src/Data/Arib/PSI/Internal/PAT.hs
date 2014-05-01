@@ -13,6 +13,7 @@ import Control.Monad
 import Data.Typeable
 import Data.Bits
 import Data.Binary.Get
+import Data.Tagged
 
 import Data.Arib.PSI.Internal.Common
 
@@ -22,21 +23,23 @@ data PAT
         , programPidMap :: ![(Int, Int)]
         } deriving(Show, Typeable)
 
-instance PSI PAT where
+instance HasPSIHeader PAT where
     header = header . patPsiHeader
     {-# INLINE header #-}
 
-pat :: PSIFunc PAT
-pat 0 = {-# SCC "pat" #-} runPsi getF
-  where
-    getF h = PAT h <$> foldM (\m _ -> do
-        genre <- getWord16be
-        pid   <- fromIntegral . (0x1FFF .&.) <$> getWord16be
-        return $ if genre == 0
-                 then m
-                 else (fromIntegral genre, pid) : m
-        ) [] [1 .. ((sectionLength h - 9) `quot` 4)]
+pat :: PSITag PAT
+pat = Tagged (== 0)
 
-pat _ = const []
-{-# INLINE pat #-}
+instance PSI PAT where
+    getPSI _ = {-# SCC "pat" #-} runPsi getF
+      where
+        getF h = PAT h <$> foldM (\m _ -> do
+            genre <- getWord16be
+            pid   <- fromIntegral . (0x1FFF .&.) <$> getWord16be
+            return $ if genre == 0
+                     then m
+                     else (fromIntegral genre, pid) : m
+            ) [] [1 .. ((sectionLength h - 9) `quot` 4)]
+
+    {-# INLINE getPSI #-}
 
