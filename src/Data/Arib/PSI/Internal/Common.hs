@@ -80,8 +80,6 @@ instance HasPSIHeader Word64 where
     header = id
     {-# INLINE header #-}
 
-type PSIFunc a = Int -> L.ByteString -> [a]
-
 type PSITag a = Tagged a (Int -> Bool)
 
 class (Typeable a, Show a) => PSI a where

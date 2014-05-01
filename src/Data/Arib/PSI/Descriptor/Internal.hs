@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
-module Data.Arib.PSI.Internal.Descriptor where
+module Data.Arib.PSI.Descriptor.Internal where
 
 import Control.Applicative
 import qualified Data.ByteString      as S

@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
-module Data.Arib.PSI.Internal.PMT where
+module Data.Arib.PSI.PMT.Internal where
 
 import Control.Applicative
 import Data.Bits
@@ -16,7 +16,7 @@ import Data.Typeable
 import Data.Tagged
 
 import Data.Arib.PSI.Internal.Common
-import Data.Arib.PSI.Internal.Descriptor
+import Data.Arib.PSI.Descriptor.Internal
 
 data PMT
     = PMT

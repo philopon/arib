@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
-module Data.Arib.PSI.Internal.PAT where
+module Data.Arib.PSI.PAT.Internal where
 
 import Control.Applicative
 import Control.Monad

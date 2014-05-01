@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
-module Data.Arib.PSI.Internal.EIT where
+module Data.Arib.PSI.EIT.Internal where
 
 import Control.Applicative
 import qualified Data.ByteString      as S
@@ -20,7 +20,7 @@ import Data.Tagged
 import Data.Typeable
 
 import Data.Arib.PSI.Internal.Common
-import Data.Arib.PSI.Internal.Descriptor
+import Data.Arib.PSI.Descriptor.Internal
 
 data EIT
     = EIT 

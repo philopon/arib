@@ -26,6 +26,10 @@ library
                      , Data.Arib.CRC
                      , Data.Arib.PESPSI
                      , Data.Arib.PSI
+                     , Data.Arib.PSI.Descriptor
+                     , Data.Arib.PSI.PAT
+                     , Data.Arib.PSI.PMT
+                     , Data.Arib.PSI.EIT
 
                      , Data.Arib.String.Internal
                      , Data.Arib.String.Internal.Charset
@@ -42,10 +46,10 @@ library
 
                      , Data.Arib.PSI.Internal
                      , Data.Arib.PSI.Internal.Common
-                     , Data.Arib.PSI.Internal.Descriptor
-                     , Data.Arib.PSI.Internal.EIT
-                     , Data.Arib.PSI.Internal.PAT
-                     , Data.Arib.PSI.Internal.PMT
+                     , Data.Arib.PSI.Descriptor.Internal
+                     , Data.Arib.PSI.PAT.Internal
+                     , Data.Arib.PSI.PMT.Internal
+                     , Data.Arib.PSI.EIT.Internal
 
   other-extensions:    LambdaCase
                      , Rank2Types

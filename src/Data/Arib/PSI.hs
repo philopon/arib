@@ -3,20 +3,15 @@ module Data.Arib.PSI
     -- * PSI Class\/Datatype\/Alias
     HasPSIHeader(..)
     , PSIHeader(..)
-    , PSIFunc
+
     -- * PSI Tables
     , raw
-    -- ** Program Association Table(tableId:0x0000) 
-    , PAT(..), pat
-    -- ** Program Map Table(tableId:assigned by PAT)
-    , PMT(..), PMTStream(..), pmt, pmt', pmt_
-    -- ** Event Information Table(tableId:0x0012,0x0026,0x0027)
-    , EIT(..), Event(..), eit
+    , module Data.Arib.PSI.PAT
+    , module Data.Arib.PSI.PMT
+    , module Data.Arib.PSI.EIT
 
     -- * Descriptors
-    , Descriptor(..)
-    , Descriptors(..)
-    , streamIdDescriptor
+    , module Data.Arib.PSI.Descriptor
 
     -- * Homogeneous PSI Conduit
     , singlePSI
@@ -32,8 +27,8 @@ module Data.Arib.PSI
 import Data.Arib.PSI.Internal
 
 import Data.Arib.PSI.Internal.Common
-import Data.Arib.PSI.Internal.Descriptor
-import Data.Arib.PSI.Internal.PAT
-import Data.Arib.PSI.Internal.PMT
-import Data.Arib.PSI.Internal.EIT
+import Data.Arib.PSI.Descriptor
+import Data.Arib.PSI.PAT
+import Data.Arib.PSI.PMT
+import Data.Arib.PSI.EIT
 
