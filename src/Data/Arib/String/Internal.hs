@@ -3,15 +3,18 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Data.Arib.String.Internal where
 
 import Control.Applicative
 import Control.Monad.RWS.Strict
 import Control.Monad.Error
+import Control.Exception
 
 import Numeric
 import Data.Bits
+import Data.Typeable
 import Data.Word
 import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as L
@@ -89,7 +92,8 @@ data AribStringException
     = UnknownEscapeSequence [Word8]
     | IllegalEndOfInput
     | WantInput String
-    deriving Show
+    deriving (Show, Typeable)
+instance Exception AribStringException
 
 processEscape' :: (MonadError AribStringException m, MonadState s m) 
                => [Word8] -> m (Either Word8 a) -> (a -> s -> s) -> Word8 -> m ()
@@ -170,11 +174,10 @@ process = CB.head >>= \case
     Just a  -> process' a >> process
 
 -- | decode arib string to utf8 encoded bytestring.  
---   when decode error, call fail method of Monad instance.
-decodeUtf8 :: Monad m => L.ByteString -> m L.ByteString
+decodeUtf8 :: L.ByteString -> Either AribStringException L.ByteString
 decodeUtf8 str = 
-    either (fail . show) return . fmap (B.toLazyByteString . snd) $
+    fmap (B.toLazyByteString . snd) $
     evalRWST (CB.sourceLbs str $$ process) utf8Config (initialState utf8Config)
 
-decodeText :: Monad m => L.ByteString -> m T.Text
-decodeText = liftM T.decodeUtf8 . decodeUtf8
+decodeText :: L.ByteString -> Either AribStringException T.Text
+decodeText = fmap T.decodeUtf8 . decodeUtf8
