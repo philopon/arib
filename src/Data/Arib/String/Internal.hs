@@ -18,6 +18,9 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Builder as B
 import qualified Data.Map.Strict as M
 
+import qualified Data.Text.Lazy          as T
+import qualified Data.Text.Lazy.Encoding as T
+
 import Data.Conduit
 import qualified Data.Conduit.Binary as CB
 
@@ -173,3 +176,5 @@ decodeUtf8 str =
     either (fail . show) return . fmap (B.toLazyByteString . snd) $
     evalRWST (CB.sourceLbs str $$ process) utf8Config (initialState utf8Config)
 
+decodeText :: Monad m => L.ByteString -> m T.Text
+decodeText = liftM T.decodeUtf8 . decodeUtf8
