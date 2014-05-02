@@ -24,7 +24,7 @@ data PESPSI a
         { pesPsiProgramId       :: {-#UNPACK#-}!Int
         , pesPsiAdaptationField :: !L.ByteString
         , pesPsiPayload         :: !a
-        } deriving (Show, Functor, Typeable)
+        } deriving (Show, Read, Eq, Ord, Functor, Typeable)
 
 isNextOf' :: Word8 -> Word8 -> Bool
 0x0 `isNextOf'` 0xf = True

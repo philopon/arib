@@ -24,15 +24,14 @@ data PMT
         , pmtPcrPid      :: {-#UNPACK#-}!Word16
         , pmtDescriptors :: !Descriptors
         , pmtStreams     :: ![PMTStream]
-        }
-        deriving (Show, Typeable)
+        } deriving (Show, Eq, Typeable)
 
 data PMTStream 
     = PMTStream
         { streamTypeId :: Word8
         , elementalyPID :: Int
         , streamDescriptors :: Descriptors
-        } deriving (Show, Typeable)
+        } deriving (Show, Eq, Typeable)
 
 instance HasPSIHeader PMT where
     header = header . pmtPsiHeader

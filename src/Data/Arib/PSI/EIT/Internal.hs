@@ -27,7 +27,7 @@ data EIT
         , segmentLastSectionNumber :: {-#UNPACK#-}!Word8
         , lastTableId              :: {-#UNPACK#-}!Word8
         , eitEvents                :: ![Event]
-        } deriving (Show, Typeable)
+        } deriving (Show, Eq, Typeable)
 
 data Event
     = Event 
@@ -37,7 +37,7 @@ data Event
         , eventStatus      :: {-#UNPACK#-}!Word16
         , eventScramble    :: !Bool 
         , eventDescriptors :: !Descriptors
-        } deriving (Show, Typeable)
+        } deriving (Show, Eq, Typeable)
 
 instance HasPSIHeader EIT where
     header = header . eitPsiHeader

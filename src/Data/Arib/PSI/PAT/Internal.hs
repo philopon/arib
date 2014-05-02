@@ -21,7 +21,7 @@ data PAT
     = PAT
         { patPsiHeader  :: {-#UNPACK#-}!PSIHeader
         , programPidMap :: ![(Int, Int)]
-        } deriving(Show, Typeable)
+        } deriving (Show, Eq, Typeable)
 
 instance HasPSIHeader PAT where
     header = header . patPsiHeader

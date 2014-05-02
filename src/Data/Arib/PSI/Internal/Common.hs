@@ -63,6 +63,8 @@ runPsi get = {-# SCC "runPsi" #-} go
 {-# INLINE runPsi #-}
 
 newtype PSIHeader = PSIHeader Word64
+    deriving (Eq, Typeable)
+
 instance Show PSIHeader where
     show h = "PSIHeader {tableId = "     ++ show (tableId h) ++
              ", sectionLength = "        ++ show (sectionLength h) ++

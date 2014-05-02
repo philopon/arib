@@ -25,6 +25,7 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List   as CL
 
 newtype TS = TS { tsPacket :: S.ByteString }
+           deriving (Eq, Typeable, Ord)
 
 instance Show TS where
     show ts =
