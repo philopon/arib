@@ -1,5 +1,7 @@
 module Data.Arib.PSI.Descriptor
-    ( Descriptor(..), Descriptors(..), streamIdDescriptor
+    ( Descriptors_(streamId, shortEvent, other), Descriptors
+    , ComponentTag(..)
+    , ShortEvent(..)
     ) where
 
 import Data.Arib.PSI.Descriptor.Internal

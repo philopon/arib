@@ -9,9 +9,6 @@
 module Data.Arib.PSI.EIT.Internal where
 
 import Control.Applicative
-import qualified Data.ByteString      as S
-import qualified Data.ByteString.Lazy as L
-import qualified Data.IntMap.Strict as IM
 import Data.Bits
 import Data.Word
 import Data.Binary.Get
@@ -37,9 +34,6 @@ data Event
         { eventId          :: {-#UNPACK#-}!Word16
         , eventStartTime   :: {-#UNPACK#-}!LocalTime
         , eventDuration    :: !DiffTime
-        , eventLanguage    :: {-#UNPACK#-}!S.ByteString
-        , eventTitle       :: !L.ByteString
-        , eventDescription :: !L.ByteString
         , eventStatus      :: {-#UNPACK#-}!Word16
         , eventScramble    :: !Bool 
         , eventDescriptors :: !Descriptors
@@ -78,13 +72,8 @@ instance PSI EIT where
                     let stt = shiftR  st 13
                         scr = testBit st 12
                         len = fromIntegral $ 0xFFF .&. st
-                    Descriptors descs <- getDescriptors len
-                    let ShortEventDescriptor lang title desc = case IM.lookup 0x4D descs of
-                            Nothing -> ShortEventDescriptor S.empty L.empty L.empty
-                            Just e  -> e
-
-                    (Event eid (LocalTime mjd tod) (timeOfDayToTime dur) lang title desc
-                        stt scr (Descriptors $ IM.delete 0x4D descs) :) <$> loop (n - len - 12)
+                    descs <- getDescriptors len
+                    (Event eid (LocalTime mjd tod) (timeOfDayToTime dur) stt scr descs :) <$> loop (n - len - 12)
             bcd s w = shiftR w s .&. 0xf
     {-# INLINE getPSI #-}
 
