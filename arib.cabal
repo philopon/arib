@@ -31,7 +31,7 @@ library
                      , Data.Arib.PSI.PMT
                      , Data.Arib.PSI.EIT
 
-                     , Data.Arib.String.Internal
+  other-modules:       Data.Arib.String.Internal
                      , Data.Arib.String.Internal.Charset
                      , Data.Arib.String.Internal.Common
                      , Data.Arib.String.Internal.Debug

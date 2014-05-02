@@ -3,6 +3,8 @@ module Data.Arib.PSI
     -- * PSI Class\/Datatype\/Alias
     HasPSIHeader(..)
     , PSIHeader(..)
+    , PSI(..)
+    , PSITag
 
     -- * PSI Tables
     , raw

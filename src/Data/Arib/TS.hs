@@ -1,6 +1,6 @@
 module Data.Arib.TS
     ( -- * TS Data type
-    TS
+    TS(..)
     -- * TS Header Getter
     , transportErrorIndicator
     , hasPayload
