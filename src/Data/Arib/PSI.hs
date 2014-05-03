@@ -5,6 +5,7 @@ module Data.Arib.PSI
     , PSIHeader(..)
     , PSI(..)
     , PSITag
+    , Pretty(..)
 
     -- * PSI Tables
     , raw

@@ -20,6 +20,7 @@ import Data.Word
 import Data.Bits
 import Data.Binary.Get
 
+import Data.Arib.PSI.Internal.Common
 import Data.Arib.String
 
 data ShortEvent = ShortEvent
@@ -103,7 +104,7 @@ data VideoDecodeControl
     = VideoDecodeControl 
         { isStillPicture    :: Bool
         , isSequenceEndCode :: Bool
-        , videoEncoding     :: VideoResolution
+        , videoEncodeFormat :: VideoResolution
         } deriving (Show, Read, Eq, Ord, Typeable)
 
 toVideoDecodeControl :: Word8 -> VideoDecodeControl
@@ -132,6 +133,18 @@ data VideoResolution
     | OtherResolution Word8
     deriving (Show, Read, Eq, Ord, Typeable)
 
+instance Pretty VideoResolution where
+    pretty Video1080p = "1080p"
+    pretty Video1080i = "1080i"
+    pretty Video720p  = "720p"
+    pretty Video480p  = "480p"
+    pretty Video480i  = "480i"
+    pretty Video240p  = "240p"
+    pretty Video120p  = "120p"
+    pretty Video2160p = "2160p"
+    pretty Video180p  = "180p"
+    pretty (OtherResolution w) = "Other[" ++ show w ++ "]"
+
 data VideoAspectRatio
     -- | aspect ratio == 4:3
     = Normal
@@ -141,6 +154,12 @@ data VideoAspectRatio
     | Wider
     | OtherAspectRatio Word8
     deriving (Show, Read, Eq, Ord, Typeable)
+
+instance Pretty VideoAspectRatio where
+    pretty Normal = "4:3"
+    pretty Wide{} = "16:9"
+    pretty Wider  = ">16:9"
+    pretty (OtherAspectRatio w) = "Other[" ++ show w ++ "]"
 
 data AudioMode
     = AudioMode 

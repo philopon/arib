@@ -95,3 +95,5 @@ instance PSI L.ByteString where
     getPSI   _   = (:[])
     {-# INLINE getPSI #-}
 
+class Pretty a where
+  pretty :: a -> String
