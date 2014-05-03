@@ -28,6 +28,70 @@ data ShortEvent = ShortEvent
     , shortEventDescription :: TL.Text
     } deriving (Show, Read, Eq, Ord, Typeable)
 
+data Component = Component
+    { componentType          :: ComponentType
+    , componentTag           :: ComponentTag
+    , componentLanguage      :: S.ByteString
+    , componentDescription   :: TL.Text
+    } deriving (Show, Read, Eq, Ord, Typeable)
+
+data ComponentType 
+    = Video { videoResolution  :: VideoResolution
+            , videoAspectRatio :: VideoAspectRatio
+            }
+    | Audio { audioMode :: AudioMode }
+    | H264  { h264Resolution  :: VideoResolution
+            , h264AspectRatio :: VideoAspectRatio
+            }
+    | OtherComponentType Word8 Word8
+    deriving (Show, Read, Eq, Ord, Typeable)
+
+toResolution :: Word8 -> VideoResolution
+toResolution w = case shiftR w 4 of
+    0x0 -> Video480i
+    0x9 -> Video2160p
+    0xA -> Video480p
+    0xB -> Video1080i
+    0xC -> Video720p
+    0xD -> Video240p
+    0xE -> Video1080p
+    0xF -> Video180p
+    x   -> OtherResolution x
+
+toAspectRatio :: Word8 -> VideoAspectRatio
+toAspectRatio w = case 0xf .&. w of
+    1 -> Normal
+    2 -> Wide True
+    3 -> Wide False
+    4 -> Wider
+    x -> OtherAspectRatio x
+
+toAudioMode :: Word8 -> AudioMode
+toAudioMode 0x01 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0
+toAudioMode 0x02 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0 -- TODO: dual mono
+toAudioMode 0x03 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 0) (AudioChannel 0 0 0) 0
+toAudioMode 0x04 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 1) (AudioChannel 0 0 0) 0
+toAudioMode 0x05 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 0) (AudioChannel 0 0 0) 0
+toAudioMode 0x06 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 0
+toAudioMode 0x07 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 1) (AudioChannel 0 0 0) 0
+toAudioMode 0x08 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 0
+toAudioMode 0x09 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x0A = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 3) (AudioChannel 0 0 0) 1
+toAudioMode 0x0B = AudioMode (AudioChannel 2 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x0C = AudioMode (AudioChannel 0 0 0) (AudioChannel 5 0 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x0D = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 2 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x0E = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x0F = AudioMode (AudioChannel 0 2 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+toAudioMode 0x10 = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
+toAudioMode 0x11 = AudioMode (AudioChannel 3 3 3) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
+toAudioMode w    = OtherAudioMode w
+
+toComponentType :: Word8 -> Word8 -> ComponentType
+toComponentType 0x1 w = Video (toResolution w) (toAspectRatio w)
+toComponentType 0x2 w = Audio (toAudioMode  w)
+toComponentType 0x5 w = H264  (toResolution w) (toAspectRatio w)
+toComponentType a b = OtherComponentType a b
+
 -- | B-10 Table.6-5 (pp. 122-126 pdf pp. 134-138)
 newtype ComponentTag
     = ComponentTag Word8 
@@ -35,15 +99,15 @@ newtype ComponentTag
 
 type StreamId = ComponentTag
 
-data VideoControl
-    = VideoControl 
+data VideoDecodeControl
+    = VideoDecodeControl 
         { isStillPicture    :: Bool
         , isSequenceEndCode :: Bool
-        , videoEncode       :: VideoEncode
+        , videoEncoding     :: VideoResolution
         } deriving (Show, Read, Eq, Ord, Typeable)
 
-toVideoControl :: Word8 -> VideoControl
-toVideoControl w = VideoControl (testBit w 7) (testBit w 6) $ case shiftR w 2 .&. 0xF of
+toVideoDecodeControl :: Word8 -> VideoDecodeControl
+toVideoDecodeControl w = VideoDecodeControl (testBit w 7) (testBit w 6) $ case shiftR w 2 .&. 0xF of
     0 -> Video1080p
     1 -> Video1080i
     2 -> Video720p
@@ -53,9 +117,9 @@ toVideoControl w = VideoControl (testBit w 7) (testBit w 6) $ case shiftR w 2 .&
     6 -> Video120p
     7 -> Video2160p
     8 -> Video180p
-    x -> Other x
+    x -> OtherResolution x
 
-data VideoEncode 
+data VideoResolution
     = Video1080p
     | Video1080i
     | Video720p
@@ -65,36 +129,59 @@ data VideoEncode
     | Video120p
     | Video2160p
     | Video180p
-    | Other Word8
+    | OtherResolution Word8
     deriving (Show, Read, Eq, Ord, Typeable)
+
+data VideoAspectRatio
+    -- | aspect ratio == 4:3
+    = Normal
+    -- | aspect ratio == 16:9
+    | Wide { panVector :: Bool }
+    -- | aspect ratio > 16:9
+    | Wider
+    | OtherAspectRatio Word8
+    deriving (Show, Read, Eq, Ord, Typeable)
+
+data AudioMode
+    = AudioMode 
+        { audioTop    :: AudioChannel
+        , audioMiddle :: AudioChannel
+        , audioBottom :: AudioChannel
+        , audioLFE    :: {-#UNPACK#-}!Int
+        }
+    | OtherAudioMode Word8
+    deriving (Show, Read, Eq, Ord, Typeable)
+
+data AudioChannel = AudioChannel
+    { audioFront :: {-#UNPACK#-}!Int
+    , audioSide  :: {-#UNPACK#-}!Int
+    , audioBack  :: {-#UNPACK#-}!Int
+    } deriving (Show, Read, Eq, Ord, Typeable)
 
 data Descriptors
     = Descriptors
         { 
         -- | 0x4D
-          shortEvent   :: [ShortEvent]
+          shortEvent         :: [ShortEvent]
+        -- | 0x50
+        , component          :: [Component]
         -- | 0x52
-        , streamId     :: [StreamId]
+        , streamId           :: [StreamId]
         -- | 0xC8
-        , videoControl :: [VideoControl]
-        , other        :: [(Word8, L.ByteString)]
+        , videoDecodeControl :: [VideoDecodeControl]
+        , other              :: [(Word8, L.ByteString)]
         } deriving (Show, Read, Eq, Ord, Typeable)
 
 data Descriptors_ 
     = Descriptors_
-        { shortEvent_   :: [ShortEvent]            -> [ShortEvent]
-        , streamId_     :: [StreamId]              -> [StreamId]
-        , videoControl_ :: [VideoControl]          -> [VideoControl]
-        , other_        :: [(Word8, L.ByteString)] -> [(Word8, L.ByteString)]
+        { shortEvent_         :: [ShortEvent]            -> [ShortEvent]
+        , component_          :: [Component]             -> [Component]
+        , streamId_           :: [StreamId]              -> [StreamId]
+        , videoDecodeControl_ :: [VideoDecodeControl]    -> [VideoDecodeControl]
+        , other_              :: [(Word8, L.ByteString)] -> [(Word8, L.ByteString)]
         }
 
 getDescriptor :: Word8 -> Descriptors_ -> Get (Word8, Descriptors_)
-getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
-    return (3, descs { streamId_     = streamId_     descs . (ComponentTag   w:) } )
-
-getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
-    return (3, descs { videoControl_ = videoControl_ descs . (toVideoControl w:) } )
-
 getDescriptor 0x4D descs = do
     len   <- getWord8
     lang  <- getByteString 3
@@ -104,15 +191,30 @@ getDescriptor 0x4D descs = do
     desc  <- either (fail . show) return . decodeText =<< getLazyByteString dLen
     return (len + 2, descs { shortEvent_ = shortEvent_ descs . (:) (ShortEvent lang title desc) } )
 
+getDescriptor 0x50 descs = do
+    len  <- getWord8
+    sc   <- (0xF .&.) <$> getWord8
+    cty  <- getWord8
+    ctg  <- ComponentTag <$> getWord8
+    lang <- getByteString 3
+    desc <- either (fail . show) return . decodeText =<< getLazyByteString (fromIntegral len - 6)
+    return $ (len + 2, descs { component_ = component_ descs . (:) (Component (toComponentType sc cty) ctg lang desc) } )
+
+getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
+    return (3, descs { streamId_     = streamId_     descs . (ComponentTag   w:) } )
+
+getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
+    return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (toVideoDecodeControl w:) } )
+
 getDescriptor w    descs = do
     len <- getWord8
     s   <- getLazyByteString (fromIntegral len)
     return (len + 2, descs { other_ = other_ descs . (:) (w, s) })
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id) s
+getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id) s
   where
-    reduceDesc (Descriptors_ a b c d) = Descriptors (a []) (b []) (c []) (d [])
+    reduceDesc (Descriptors_ a b c d e) = Descriptors (a []) (b []) (c []) (d []) (e [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do
