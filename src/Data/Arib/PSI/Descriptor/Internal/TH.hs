@@ -69,7 +69,13 @@ mkGenre file = do
              ]
          , pragInlD 'pretty Inline FunLike AllPhases
          ]
-    return $ subGenreD ++ genreD : fromBinaryD : prettyGenreD : prettySubGenreD
+    prettySubGenreFD <- funD (mkName "prettySubGenre") $ 
+        map (prettySubGenreF . fst) g ++
+        [ clause [conP (mkName "OtherGenre") []] (normalB [|"その他"|]) []
+        , clause [conP (mkName "UndefinedGenre") [varP $ mkName "s"]] (normalB [|"未定義[" ++ show $(varE $ mkName "s") ++ "]"|]) []
+        ]
+    prettySubGenreSig <- sigD (mkName "prettySubGenre") [t| $(conT $ mkName "Genre") -> String |]
+    return $ subGenreD ++ genreD : fromBinaryD : prettyGenreD : prettySubGenreD ++ prettySubGenreFD : prettySubGenreSig : []
   where
     derive = [''Show, ''Read, ''Eq, ''Ord, ''Typeable]
     genreMatch g = map ( \((gi, gn, _), sg) ->
@@ -87,3 +93,4 @@ mkGenre file = do
 
     prettyGenre       (_, gn, gd) = clause [conP (mkName gn) [wildP]] (normalB $ stringE gd) []
     prettySubGenre gn (_,sgn,sgd) = clause [conP (mkName $ gn ++ sgn) []] (normalB $ stringE sgd) []
+    prettySubGenreF   (_, gn, _ ) = clause [conP (mkName gn) [varP $ mkName "s"]] (normalB [|pretty $(varE $ mkName "s")|]) []

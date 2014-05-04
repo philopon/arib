@@ -28,6 +28,10 @@ data ComponentType
     | OtherComponentType Word8 Word8
     deriving (Show, Read, Eq, Ord, Typeable)
 
+-- | B-10 Table.6-5 (pp. 122-126 pdf pp. 134-138)
+newtype ComponentTag = ComponentTag Word8 
+    deriving (Show, Read, Eq, Ord, Typeable)
+
 data VideoResolution
     = Video1080p
     | Video1080i
@@ -103,12 +107,6 @@ data AudioMode
     | OtherAudioMode Word8
     deriving (Show, Read, Eq, Ord, Typeable)
 
-data AudioChannel = AudioChannel
-    { audioFront :: {-#UNPACK#-}!Int
-    , audioSide  :: {-#UNPACK#-}!Int
-    , audioBack  :: {-#UNPACK#-}!Int
-    } deriving (Show, Read, Eq, Ord, Typeable)
-
 instance FromBinary AudioMode where
     type BinaryRep AudioMode = Word8
     fromBinary 0x01 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0
@@ -131,6 +129,12 @@ instance FromBinary AudioMode where
     fromBinary w    = OtherAudioMode w
     {-# INLINE fromBinary #-}
 
+data AudioChannel = AudioChannel
+    { audioFront :: {-#UNPACK#-}!Int
+    , audioSide  :: {-#UNPACK#-}!Int
+    , audioBack  :: {-#UNPACK#-}!Int
+    } deriving (Show, Read, Eq, Ord, Typeable)
+
 instance FromBinary ComponentType where
     type BinaryRep ComponentType = (Word8, Word8)
     fromBinary (0x1, w) = Video (fromBinary w) (fromBinary w)
@@ -139,8 +143,5 @@ instance FromBinary ComponentType where
     fromBinary (a,   b) = OtherComponentType a b
     {-# INLINE fromBinary #-}
 
--- | B-10 Table.6-5 (pp. 122-126 pdf pp. 134-138)
-newtype ComponentTag = ComponentTag Word8 
-    deriving (Show, Read, Eq, Ord, Typeable)
 
 
