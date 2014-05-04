@@ -1,0 +1,119 @@
+0x0	News	ニュース/報道
+	0x0	Regular	定時・総合
+	0x1	Weather	天気
+	0x2	Document	特集・ドキュメント
+	0x3	Political	政治・国会
+	0x4	Economical	経済・市況
+	0x5	Foreign	海外・国際
+	0x6	Explanation	解説
+	0x7	Discussion	討論・会談
+	0x8	Special	報道特番
+	0x9	Local	ローカル・地域
+	0xA	Trafics	交通
+
+0x1	Sports	スポーツ
+	0x0	News	スポーツニュース
+	0x1	Baseball	野球
+	0x2	Soccer	サッカー
+	0x3	Golf	ゴルフ
+	0x4	OtherBallGame	その他の球技
+	0x5	Combative	相撲・格闘技
+	0x6	Convention	オリンピック・国際大会
+	0x7	Marathon	マラソン・陸上・水泳
+	0x8	Moter	モータースポーツ
+	0x9	Marine	マリン・ウィンタースポーツ
+	0xA	GovernmentControlled	競馬・公営競技
+
+0x2	Information	情報/ワイドショー
+	0x0	Entertainments	芸能・ワイドショー
+	0x1	Fashion	ファッション
+	0x2	Living	暮らし・住まい
+	0x3	Medical	健康・医療
+	0x4	Shopping	ショッピング・通販
+	0x5	Gourmet	グルメ・料理
+	0x6	Event	イベント
+	0x7	Introduction	番組紹介・お知らせ
+
+0x3	Drama	ドラマ
+	0x0	Domestic	国内ドラマ
+	0x1	Foreign	海外ドラマ
+
+0x4	Music	音楽
+	0x0	DomesticRockPops	国内ロック・ポップス
+	0x1	ForeignRockPops	海外ロック・ポップス
+	0x2	Opera	クラシック・オペラ
+	0x3	Jazz	ジャズ・フュージョン
+	0x4	Popular	歌謡曲・演歌
+	0x5	Live	ライブ・コンサート
+	0x6	Ranking	ランキング・リクエスト
+	0x7	Karaoke	カラオケ・のど自慢
+	0x8	Folk	民謡・邦楽
+	0x9	Kids	童謡・キッズ
+	0xA	Ethnic	民族音楽・ワールドミュージック
+
+0x5	Variety	バラエティ
+	0x0	Quiz	クイズ
+	0x1	Game	ゲーム
+	0x2	Talk	トークバラエティ
+	0x3	Comedy	お笑い・コメディ
+	0x4	Music	音楽バラエティ
+	0x5	Trip	旅バラエティ
+	0x6	Cooking	料理バラエティ
+
+0x6	Movie	映画
+	0x0	Domestic	洋画
+	0x1	Foreign	邦画
+	0x2	Anime	アニメ
+
+0x7	Anime	アニメ/特撮
+	0x0	Domestic	国内アニメ
+	0x1	Foreign	海外アニメ
+	0x2	SpecialEffects	特撮
+
+0x8	Documentary	ドキュメンタリー/教養
+	0x0	Social	社会・時事
+	0x1	History	歴史・紀行
+	0x2	Nature	自然・動物・環境
+	0x3	Space	宇宙・科学・医学
+	0x4	Culture	カルチャー・伝統文化
+	0x5	Literature	文学・文芸
+	0x6	Sports	スポーツ
+	0x7	General	ドキュメンタリー全般
+	0x8	Interview	インタビュー・討論
+
+0x9	Performance	劇場/公演
+	0x0	NewDrama	現代劇・新劇
+	0x1	Musical	ミュージカル
+	0x2	Dance	ダンス・バレエ
+	0x3	Entertainment	落語・演芸
+	0x4	Kabuki	歌舞伎・古典
+
+0xA	Hobby	趣味/教育
+	0x0	Trip	旅・釣り・アウトドア
+	0x1	Gardening	園芸・ペット・手芸
+	0x2	Music	音楽・美術・工芸
+	0x3	Shogi	囲碁・将棋
+	0x4	MahJongg	麻雀・パチンコ
+	0x5	Car	車・オートバイ
+	0x6	Computer	コンピュータ・TVゲーム
+	0x7	Language	会話・語学
+	0x8	Child	幼児・小学生
+	0x9	Teen	中学生・高校生
+	0xA	University	大学生・受験
+	0xB	Capacity	生涯教育・資格
+	0xC	EducationalProglem	教育問題
+
+0xB	Welfare	福祉
+	0x0	Aged	高齢者
+	0x1	Handicapped	障害者
+	0x2	Social	社会福祉
+	0x3	Volunteer	ボランティア
+	0x4	SingLanguage	手話
+	0x5	Subtitle	文字(字幕)
+	0x6	VoiceExplanation	音声解説
+
+0xE	Extension	拡張
+	0x0	BS	BS/地上デジタル放送用番組付属情報
+	0x1	CS	広帯域CSデジタル放送用拡張
+	0x3	Server	サーバー型番組付属情報
+	0x4	IP	IP放送用番組付属情報

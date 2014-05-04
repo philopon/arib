@@ -47,6 +47,7 @@ library
                      , Data.Arib.PSI.Internal
                      , Data.Arib.PSI.Internal.Common
                      , Data.Arib.PSI.Descriptor.Internal
+                     , Data.Arib.PSI.Descriptor.Internal.TH
                      , Data.Arib.PSI.PAT.Internal
                      , Data.Arib.PSI.PMT.Internal
                      , Data.Arib.PSI.EIT.Internal

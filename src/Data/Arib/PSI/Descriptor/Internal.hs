@@ -7,6 +7,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Data.Arib.PSI.Descriptor.Internal where
 
@@ -24,10 +25,8 @@ import Data.Binary.Get
 
 import Data.Arib.PSI.Internal.Common
 import Data.Arib.String
+import Data.Arib.PSI.Descriptor.Internal.TH (mkGenre)
 
-class FromBinary a where
-  type BinaryRep a
-  fromBinary :: BinaryRep a -> a
 
 --------------------------------------------------------------------------------
 
@@ -178,6 +177,15 @@ type StreamId = ComponentTag
 
 --------------------------------------------------------------------------------
 
+mkGenre "aribdata/genre.txt"
+
+data Content = Content
+    { genre      :: Genre
+    , userNibble :: Word8
+    } deriving (Show, Read, Eq, Ord, Typeable)
+
+--------------------------------------------------------------------------------
+
 data VideoDecodeControl
     = VideoDecodeControl 
         { isStillPicture    :: Bool
@@ -239,6 +247,8 @@ data Descriptors
         , component          :: [Component]
         -- | 0x52
         , streamId           :: [StreamId]
+        -- | 0x54
+        , content            :: [Content]
         -- | 0xC8
         , videoDecodeControl :: [VideoDecodeControl]
         -- | 0xD6
@@ -251,6 +261,7 @@ data Descriptors_
         { shortEvent_         :: [ShortEvent]            -> [ShortEvent]
         , component_          :: [Component]             -> [Component]
         , streamId_           :: [StreamId]              -> [StreamId]
+        , content_            :: [Content]               -> [Content]
         , videoDecodeControl_ :: [VideoDecodeControl]    -> [VideoDecodeControl]
         , eventGroup_         :: [EventGroup]            -> [EventGroup]
         , other_              :: [(Word8, L.ByteString)] -> [(Word8, L.ByteString)]
@@ -278,6 +289,11 @@ getDescriptor 0x50 descs = do
 getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
     return (3, descs { streamId_     = streamId_     descs . (ComponentTag   w:) } )
 
+getDescriptor 0x54 descs = do
+    genre <- skip 1 >> fromBinary <$> getWord8
+    un    <- getWord8
+    return $ (4, descs { content_ = content_ descs . (Content genre un:) } )
+
 getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
     return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) } )
 
@@ -294,9 +310,9 @@ getDescriptor w    descs = do
     return (len + 2, descs { other_ = other_ descs . (:) (w, s) })
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id) s
+getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id) s
   where
-    reduceDesc (Descriptors_ a b c d e f) = Descriptors (a []) (b []) (c []) (d []) (e []) (f [])
+    reduceDesc (Descriptors_ a b c d e f g) = Descriptors (a []) (b []) (c []) (d []) (e []) (f []) (g [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do
