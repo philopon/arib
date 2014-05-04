@@ -11,6 +11,7 @@
 module Data.Arib.PSI.Descriptor.Internal where
 
 import Control.Applicative
+import Control.Monad
 import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as L
 
@@ -201,6 +202,34 @@ instance FromBinary VideoDecodeControl where
 
 --------------------------------------------------------------------------------
 
+data EventGroup = EventGroup
+    { eventGroupType   :: GroupType
+    , serviceEventMap  :: [(Word16, Word16)]
+    , eventPrivateData :: L.ByteString -- TODO: relay to/move from
+    } deriving (Show, Read, Eq, Ord, Typeable)
+
+data GroupType 
+    = EventShare
+    | EventRelay
+    | EventMove
+    | EventRelayToOtherNetwork
+    | EventMoveFromOtherNetwork
+    | Undefined Word8
+    deriving (Show, Read, Eq, Ord, Typeable)
+
+instance FromBinary GroupType where
+    type BinaryRep GroupType = Word8
+    fromBinary w = case w of
+        0x1 -> EventShare
+        0x2 -> EventRelay
+        0x3 -> EventMove
+        0x4 -> EventRelayToOtherNetwork
+        0x5 -> EventMoveFromOtherNetwork
+        x   -> Undefined x
+    {-# INLINE fromBinary #-}
+
+--------------------------------------------------------------------------------
+
 data Descriptors
     = Descriptors
         { 
@@ -212,6 +241,8 @@ data Descriptors
         , streamId           :: [StreamId]
         -- | 0xC8
         , videoDecodeControl :: [VideoDecodeControl]
+        -- | 0xD6
+        , eventGroup         :: [EventGroup]
         , other              :: [(Word8, L.ByteString)]
         } deriving (Show, Read, Eq, Ord, Typeable)
 
@@ -221,6 +252,7 @@ data Descriptors_
         , component_          :: [Component]             -> [Component]
         , streamId_           :: [StreamId]              -> [StreamId]
         , videoDecodeControl_ :: [VideoDecodeControl]    -> [VideoDecodeControl]
+        , eventGroup_         :: [EventGroup]            -> [EventGroup]
         , other_              :: [(Word8, L.ByteString)] -> [(Word8, L.ByteString)]
         }
 
@@ -249,15 +281,22 @@ getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
 getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
     return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) } )
 
+getDescriptor 0xD6 descs = do
+    len  <- getWord8
+    gtec <- getWord8
+    sem  <- replicateM (fromIntegral $ gtec .&. 0xF) ((,) <$> getWord16be <*> getWord16be)
+    pd   <- getLazyByteString . fromIntegral $ len - 1 - (gtec .&. 0xF) * 4
+    return $ (len + 2, descs { eventGroup_ = eventGroup_ descs . (:) (EventGroup (fromBinary $ shiftR gtec 4) sem pd) })
+
 getDescriptor w    descs = do
     len <- getWord8
     s   <- getLazyByteString (fromIntegral len)
     return (len + 2, descs { other_ = other_ descs . (:) (w, s) })
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id) s
+getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id) s
   where
-    reduceDesc (Descriptors_ a b c d e) = Descriptors (a []) (b []) (c []) (d []) (e [])
+    reduceDesc (Descriptors_ a b c d e f) = Descriptors (a []) (b []) (c []) (d []) (e []) (f [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do
