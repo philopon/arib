@@ -6,6 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Data.Arib.PSI.Descriptor.Internal where
 
@@ -23,11 +24,19 @@ import Data.Binary.Get
 import Data.Arib.PSI.Internal.Common
 import Data.Arib.String
 
+class FromBinary a where
+  type BinaryRep a
+  fromBinary :: BinaryRep a -> a
+
+--------------------------------------------------------------------------------
+
 data ShortEvent = ShortEvent
     { shortEventLanguage    :: {-# UNPACK #-}!S.ByteString
     , shortEventTitle       :: TL.Text
     , shortEventDescription :: TL.Text
     } deriving (Show, Read, Eq, Ord, Typeable)
+
+--------------------------------------------------------------------------------
 
 data Component = Component
     { componentType          :: ComponentType
@@ -46,79 +55,6 @@ data ComponentType
             }
     | OtherComponentType Word8 Word8
     deriving (Show, Read, Eq, Ord, Typeable)
-
-toResolution :: Word8 -> VideoResolution
-toResolution w = case shiftR w 4 of
-    0x0 -> Video480i
-    0x9 -> Video2160p
-    0xA -> Video480p
-    0xB -> Video1080i
-    0xC -> Video720p
-    0xD -> Video240p
-    0xE -> Video1080p
-    0xF -> Video180p
-    x   -> OtherResolution x
-
-toAspectRatio :: Word8 -> VideoAspectRatio
-toAspectRatio w = case 0xf .&. w of
-    1 -> Normal
-    2 -> Wide True
-    3 -> Wide False
-    4 -> Wider
-    x -> OtherAspectRatio x
-
-toAudioMode :: Word8 -> AudioMode
-toAudioMode 0x01 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0
-toAudioMode 0x02 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0 -- TODO: dual mono
-toAudioMode 0x03 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 0) (AudioChannel 0 0 0) 0
-toAudioMode 0x04 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 1) (AudioChannel 0 0 0) 0
-toAudioMode 0x05 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 0) (AudioChannel 0 0 0) 0
-toAudioMode 0x06 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 0
-toAudioMode 0x07 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 1) (AudioChannel 0 0 0) 0
-toAudioMode 0x08 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 0
-toAudioMode 0x09 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x0A = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 3) (AudioChannel 0 0 0) 1
-toAudioMode 0x0B = AudioMode (AudioChannel 2 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x0C = AudioMode (AudioChannel 0 0 0) (AudioChannel 5 0 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x0D = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 2 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x0E = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x0F = AudioMode (AudioChannel 0 2 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
-toAudioMode 0x10 = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
-toAudioMode 0x11 = AudioMode (AudioChannel 3 3 3) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
-toAudioMode w    = OtherAudioMode w
-
-toComponentType :: Word8 -> Word8 -> ComponentType
-toComponentType 0x1 w = Video (toResolution w) (toAspectRatio w)
-toComponentType 0x2 w = Audio (toAudioMode  w)
-toComponentType 0x5 w = H264  (toResolution w) (toAspectRatio w)
-toComponentType a b = OtherComponentType a b
-
--- | B-10 Table.6-5 (pp. 122-126 pdf pp. 134-138)
-newtype ComponentTag
-    = ComponentTag Word8 
-    deriving (Show, Read, Eq, Ord, Typeable)
-
-type StreamId = ComponentTag
-
-data VideoDecodeControl
-    = VideoDecodeControl 
-        { isStillPicture    :: Bool
-        , isSequenceEndCode :: Bool
-        , videoEncodeFormat :: VideoResolution
-        } deriving (Show, Read, Eq, Ord, Typeable)
-
-toVideoDecodeControl :: Word8 -> VideoDecodeControl
-toVideoDecodeControl w = VideoDecodeControl (testBit w 7) (testBit w 6) $ case shiftR w 2 .&. 0xF of
-    0 -> Video1080p
-    1 -> Video1080i
-    2 -> Video720p
-    3 -> Video480p
-    4 -> Video480i
-    5 -> Video240p
-    6 -> Video120p
-    7 -> Video2160p
-    8 -> Video180p
-    x -> OtherResolution x
 
 data VideoResolution
     = Video1080p
@@ -145,6 +81,20 @@ instance Pretty VideoResolution where
     pretty Video180p  = "180p"
     pretty (OtherResolution w) = "Other[" ++ show w ++ "]"
 
+instance FromBinary VideoResolution where
+    type BinaryRep VideoResolution = Word8
+    fromBinary w = case shiftR w 4 of
+        0x0 -> Video480i
+        0x9 -> Video2160p
+        0xA -> Video480p
+        0xB -> Video1080i
+        0xC -> Video720p
+        0xD -> Video240p
+        0xE -> Video1080p
+        0xF -> Video180p
+        x   -> OtherResolution x
+    {-# INLINE fromBinary #-}
+
 data VideoAspectRatio
     -- | aspect ratio == 4:3
     = Normal
@@ -161,6 +111,16 @@ instance Pretty VideoAspectRatio where
     pretty Wider  = ">16:9"
     pretty (OtherAspectRatio w) = "Other[" ++ show w ++ "]"
 
+instance FromBinary VideoAspectRatio where
+    type BinaryRep VideoAspectRatio = Word8
+    fromBinary w = case 0xf .&. w of
+        1 -> Normal
+        2 -> Wide True
+        3 -> Wide False
+        4 -> Wider
+        x -> OtherAspectRatio x
+    {-# INLINE fromBinary #-}
+
 data AudioMode
     = AudioMode 
         { audioTop    :: AudioChannel
@@ -176,6 +136,70 @@ data AudioChannel = AudioChannel
     , audioSide  :: {-#UNPACK#-}!Int
     , audioBack  :: {-#UNPACK#-}!Int
     } deriving (Show, Read, Eq, Ord, Typeable)
+
+instance FromBinary AudioMode where
+    type BinaryRep AudioMode = Word8
+    fromBinary 0x01 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0
+    fromBinary 0x02 = AudioMode (AudioChannel 0 0 0) (AudioChannel 1 0 0) (AudioChannel 0 0 0) 0 -- TODO: dual mono
+    fromBinary 0x03 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 0) (AudioChannel 0 0 0) 0
+    fromBinary 0x04 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 1) (AudioChannel 0 0 0) 0
+    fromBinary 0x05 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 0) (AudioChannel 0 0 0) 0
+    fromBinary 0x06 = AudioMode (AudioChannel 0 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 0
+    fromBinary 0x07 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 1) (AudioChannel 0 0 0) 0
+    fromBinary 0x08 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 0
+    fromBinary 0x09 = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x0A = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 0 3) (AudioChannel 0 0 0) 1
+    fromBinary 0x0B = AudioMode (AudioChannel 2 0 0) (AudioChannel 2 0 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x0C = AudioMode (AudioChannel 0 0 0) (AudioChannel 5 0 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x0D = AudioMode (AudioChannel 0 0 0) (AudioChannel 3 2 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x0E = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x0F = AudioMode (AudioChannel 0 2 0) (AudioChannel 3 0 2) (AudioChannel 0 0 0) 1
+    fromBinary 0x10 = AudioMode (AudioChannel 2 0 0) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
+    fromBinary 0x11 = AudioMode (AudioChannel 3 3 3) (AudioChannel 3 2 3) (AudioChannel 0 0 0) 2
+    fromBinary w    = OtherAudioMode w
+    {-# INLINE fromBinary #-}
+
+instance FromBinary ComponentType where
+    type BinaryRep ComponentType = (Word8, Word8)
+    fromBinary (0x1, w) = Video (fromBinary w) (fromBinary w)
+    fromBinary (0x2, w) = Audio (fromBinary w)
+    fromBinary (0x5, w) = H264  (fromBinary w) (fromBinary w)
+    fromBinary (a,   b) = OtherComponentType a b
+    {-# INLINE fromBinary #-}
+
+-- | B-10 Table.6-5 (pp. 122-126 pdf pp. 134-138)
+newtype ComponentTag = ComponentTag Word8 
+    deriving (Show, Read, Eq, Ord, Typeable)
+
+--------------------------------------------------------------------------------
+
+type StreamId = ComponentTag
+
+--------------------------------------------------------------------------------
+
+data VideoDecodeControl
+    = VideoDecodeControl 
+        { isStillPicture    :: Bool
+        , isSequenceEndCode :: Bool
+        , videoEncodeFormat :: VideoResolution
+        } deriving (Show, Read, Eq, Ord, Typeable)
+
+instance FromBinary VideoDecodeControl where
+    type BinaryRep VideoDecodeControl = Word8
+    fromBinary w = VideoDecodeControl (testBit w 7) (testBit w 6) $ case shiftR w 2 .&. 0xF of
+        0 -> Video1080p
+        1 -> Video1080i
+        2 -> Video720p
+        3 -> Video480p
+        4 -> Video480i
+        5 -> Video240p
+        6 -> Video120p
+        7 -> Video2160p
+        8 -> Video180p
+        x -> OtherResolution x
+    {-# INLINE fromBinary #-}
+
+--------------------------------------------------------------------------------
 
 data Descriptors
     = Descriptors
@@ -217,13 +241,13 @@ getDescriptor 0x50 descs = do
     ctg  <- ComponentTag <$> getWord8
     lang <- getByteString 3
     desc <- either (fail . show) return . decodeText =<< getLazyByteString (fromIntegral len - 6)
-    return $ (len + 2, descs { component_ = component_ descs . (:) (Component (toComponentType sc cty) ctg lang desc) } )
+    return $ (len + 2, descs { component_ = component_ descs . (:) (Component (curry fromBinary sc cty) ctg lang desc) } )
 
 getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
     return (3, descs { streamId_     = streamId_     descs . (ComponentTag   w:) } )
 
 getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
-    return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (toVideoDecodeControl w:) } )
+    return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) } )
 
 getDescriptor w    descs = do
     len <- getWord8
