@@ -27,6 +27,8 @@ library
                      , Data.Arib.PESPSI
                      , Data.Arib.PSI
                      , Data.Arib.PSI.Descriptor
+                     , Data.Arib.PSI.Descriptor.Component
+                     , Data.Arib.PSI.Descriptor.Content
                      , Data.Arib.PSI.PAT
                      , Data.Arib.PSI.PMT
                      , Data.Arib.PSI.EIT

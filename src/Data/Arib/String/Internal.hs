@@ -161,17 +161,17 @@ processC w
 
 process' :: ( MonadError AribStringException m, MonadReader (AribConfig a) m
             , MonadState (AribState a) m, MonadWriter a m) => Word8 -> Consumer S.ByteString m ()
-process' 0xFF = processC 0xFF
-process' w |              w < 0x21 = processC w
+process' 0xFF = {-# SCC "processC" #-} processC 0xFF
+process' w |              w < 0x21 = {-# SCC "processC" #-} processC w
            | 0x21 <= w && w < 0x7F = applyGetChar gl w
-           | 0x7F <= w && w < 0xA1 = processC w
+           | 0x7F <= w && w < 0xA1 = {-# SCC "processC" #-} processC w
            | otherwise             = applyGetChar gr w
 
 process :: ( MonadState (AribState a) m, MonadReader (AribConfig a) m
            , MonadError AribStringException m, MonadWriter a m) => Consumer S.ByteString m ()
 process = CB.head >>= \case
     Nothing -> return ()
-    Just a  -> process' a >> process
+    Just a  -> {-# SCC "process'" #-} process' a >> process
 
 -- | decode arib string to utf8 encoded bytestring.  
 decodeUtf8 :: L.ByteString -> Either AribStringException L.ByteString
