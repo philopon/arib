@@ -27,14 +27,14 @@ dict2 (Dict elen b) u l =
 {-# INLINE dict2 #-}
 
 eisuuDict, hiraganaDict, katakanaDict :: Dict
-eisuuDict    = $(mkCharset1 (SC.unpack . T.encodeUtf8) "charset/Eisuu.txt")
-hiraganaDict = $(mkCharset1 (SC.unpack . T.encodeUtf8) "charset/Hiragana.txt")
-katakanaDict = $(mkCharset1 (SC.unpack . T.encodeUtf8) "charset/Katakana.txt")
+eisuuDict    = $(mkCharset1 (SC.unpack . T.encodeUtf8) "aribdata/Eisuu.txt")
+hiraganaDict = $(mkCharset1 (SC.unpack . T.encodeUtf8) "aribdata/Hiragana.txt")
+katakanaDict = $(mkCharset1 (SC.unpack . T.encodeUtf8) "aribdata/Katakana.txt")
 
 utf8Config :: AribConfig B.Builder
 utf8Config 
     = AribConfig
-        { kanji       = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "charset/Kanji.txt") 
+        { kanji       = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "aribdata/Kanji.txt") 
         , eisuu       = dict1 eisuuDict
         , hiragana    = dict1 hiraganaDict
         , katakana    = dict1 katakanaDict
@@ -45,10 +45,10 @@ utf8Config
         , eisuuP      = dict1 eisuuDict
         , hiraganaP   = dict1 hiraganaDict
         , katakanaP   = dict1 katakanaDict
-        , jisKatakana = dict1 $(mkCharset1 (SC.unpack . T.encodeUtf8) "charset/JisKatakana.txt")
-        , jisKanji1   = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "charset/JisKanji1.txt")
-        , jisKanji2   = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "charset/JisKanji2.txt")
-        , additional  = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "charset/Arib.txt")
+        , jisKatakana = dict1 $(mkCharset1 (SC.unpack . T.encodeUtf8) "aribdata/JisKatakana.txt")
+        , jisKanji1   = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "aribdata/JisKanji1.txt")
+        , jisKanji2   = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "aribdata/JisKanji2.txt")
+        , additional  = dict2 $(mkCharset2 (SC.unpack . T.encodeUtf8) "aribdata/Arib.txt")
 
         , drcs0       = \_ _ -> mempty
         , drcs1       = \_   -> mempty
