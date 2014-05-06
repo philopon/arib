@@ -8,6 +8,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Data.Arib.PSI.Descriptor.Internal where
 
@@ -35,6 +36,28 @@ data ShortEvent = ShortEvent
     , shortEventTitle       :: TL.Text
     , shortEventDescription :: TL.Text
     } deriving (Show, Read, Eq, Ord, Typeable)
+
+--------------------------------------------------------------------------------
+
+data ExtendedEvent = ExtendedEvent
+    { extendedEventLanguage :: {-# UNPACK #-}!S.ByteString
+    , extendedEventItems    :: [(TL.Text, TL.Text)]
+    , extendedEventText     :: TL.Text
+    } deriving (Show, Read, Eq, Ord, Typeable)
+
+reduceExtendedEvent :: [(Word8, Word8, ExtendedEvent)] -> [ExtendedEvent]
+reduceExtendedEvent = go "" [] "" 0 . dropWhile (\(w,_,_) -> w /= 0)
+  where
+    go _ _ _ _ [] = []
+    go lng is ts m ((n,ln,ExtendedEvent l i t):es)
+        | m == n && n == ln = ExtendedEvent l (concatItem $ is ++ i) (ts `TL.append` t) : go l [] "" 0 es
+        | m == n            = go l (is ++ i) (ts `TL.append` t) (succ m) es
+        | otherwise         = go lng is ts m es
+    concatItem []  = []
+    concatItem [a] = [a]
+    concatItem ((at,ab):(bt,bb):is)
+        | TL.null bt = concatItem $ (at,ab `TL.append` bb):is
+        | otherwise  = (at,ab) : concatItem ((bt,bb):is)
 
 --------------------------------------------------------------------------------
 
@@ -99,6 +122,8 @@ data Descriptors
         { 
         -- | 0x4D
           shortEvent         :: [ShortEvent]
+        -- | 0x4E
+        , extendedEvent      :: [ExtendedEvent]
         -- | 0x50
         , component          :: [Component]
         -- | 0x52
@@ -114,63 +139,83 @@ data Descriptors
 
 data Descriptors_ 
     = Descriptors_
-        { shortEvent_         :: [ShortEvent]            -> [ShortEvent]
-        , component_          :: [Component]             -> [Component]
-        , streamId_           :: [StreamId]              -> [StreamId]
-        , content_            :: [Content]               -> [Content]
-        , videoDecodeControl_ :: [VideoDecodeControl]    -> [VideoDecodeControl]
-        , eventGroup_         :: [EventGroup]            -> [EventGroup]
-        , other_              :: [(Word8, L.ByteString)] -> [(Word8, L.ByteString)]
+        { shortEvent_         :: [ShortEvent]                    -> [ShortEvent]
+        , extendedEvent_      :: [(Word8, Word8, ExtendedEvent)] -> [(Word8, Word8, ExtendedEvent)]
+        , component_          :: [Component]                     -> [Component]
+        , streamId_           :: [StreamId]                      -> [StreamId]
+        , content_            :: [Content]                       -> [Content]
+        , videoDecodeControl_ :: [VideoDecodeControl]            -> [VideoDecodeControl]
+        , eventGroup_         :: [EventGroup]                    -> [EventGroup]
+        , other_              :: [(Word8, L.ByteString)]         -> [(Word8, L.ByteString)]
         }
 
-getDescriptor :: Word8 -> Descriptors_ -> Get (Word8, Descriptors_)
-getDescriptor 0x4D descs = do
-    len   <- getWord8
+toText :: Monad m => L.ByteString -> m TL.Text
+toText = either (fail . show) return . decodeText
+
+getDescriptor :: Word8 -> Word8 -> Descriptors_ -> Get Descriptors_
+getDescriptor 0x4D _ descs = do
     lang  <- getByteString 3
     pLen  <- fromIntegral <$> getWord8
-    title <- either (fail . show) return . decodeText =<< getLazyByteString pLen
+    title <- toText =<< getLazyByteString pLen
     dLen  <- fromIntegral <$> getWord8
-    desc  <- either (fail . show) return . decodeText =<< getLazyByteString dLen
-    return (len + 2, descs { shortEvent_ = shortEvent_ descs . (:) (ShortEvent lang title desc) } )
+    desc  <- toText =<< getLazyByteString dLen
+    return $ descs { shortEvent_ = shortEvent_ descs . (:) (ShortEvent lang title desc) }
 
-getDescriptor 0x50 descs = do
-    len  <- getWord8
+getDescriptor 0x4E _ descs = do
+    (dn, ldn) <- getWord8 >>= \w -> return (shiftR w 4, w .&. 0xF)
+    lang      <- getByteString 3
+    loi       <- fromIntegral <$> getWord8
+    is        <- reverse <$> getItems loi
+    tl        <- fromIntegral <$> getWord8
+    t         <- toText =<< getLazyByteString tl
+    return $ descs { extendedEvent_ = extendedEvent_ descs . (:) (dn, ldn, ExtendedEvent lang is t) }
+  where
+    getItems len
+        | len <= 0  = return []
+        | otherwise = do
+            idl  <- fromIntegral <$> getWord8
+            idsc <- toText =<< getLazyByteString idl
+            il   <- fromIntegral <$> getWord8
+            i    <- toText =<< getLazyByteString il
+            (:) (idsc, i) <$> getItems (len - idl - il - 2)
+
+getDescriptor 0x50 len descs = do
     sc   <- (0xF .&.) <$> getWord8
     cty  <- getWord8
     ctg  <- ComponentTag <$> getWord8
     lang <- getByteString 3
-    desc <- either (fail . show) return . decodeText =<< getLazyByteString (fromIntegral len - 6)
-    return $ (len + 2, descs { component_ = component_ descs . (:) (Component (curry fromBinary sc cty) ctg lang desc) } )
+    desc <- toText =<< getLazyByteString (fromIntegral len - 6)
+    return $ descs { component_ = component_ descs . (:) (Component (curry fromBinary sc cty) ctg lang desc) }
 
-getDescriptor 0x52 descs = skip 1 >> getWord8 >>= \w ->
-    return (3, descs { streamId_     = streamId_     descs . (ComponentTag   w:) } )
+getDescriptor 0x52 _ descs = getWord8 >>= \w ->
+    return $ descs { streamId_     = streamId_     descs . (ComponentTag   w:) }
 
-getDescriptor 0x54 descs = do
-    genre <- skip 1 >> fromBinary <$> getWord8
+getDescriptor 0x54 _ descs = do
+    genre <- fromBinary <$> getWord8
     un    <- getWord8
-    return $ (4, descs { content_ = content_ descs . (Content genre un:) } )
+    return $ descs { content_ = content_ descs . (Content genre un:) }
 
-getDescriptor 0xC8 descs = skip 1 >> getWord8 >>= \w -> 
-    return (3, descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) } )
+getDescriptor 0xC8 _ descs = getWord8 >>= \w -> 
+    return $ descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) }
 
-getDescriptor 0xD6 descs = do
-    len  <- getWord8
+getDescriptor 0xD6 len descs = do
     gtec <- getWord8
     sem  <- replicateM (fromIntegral $ gtec .&. 0xF) ((,) <$> getWord16be <*> getWord16be)
     pd   <- getLazyByteString . fromIntegral $ len - 1 - (gtec .&. 0xF) * 4
-    return $ (len + 2, descs { eventGroup_ = eventGroup_ descs . (:) (EventGroup (fromBinary $ shiftR gtec 4) sem pd) })
+    return $ descs { eventGroup_ = eventGroup_ descs . (:) (EventGroup (fromBinary $ shiftR gtec 4) sem pd) }
 
-getDescriptor w    descs = do
-    len <- getWord8
+getDescriptor w    len descs = do
     s   <- getLazyByteString (fromIntegral len)
-    return (len + 2, descs { other_ = other_ descs . (:) (w, s) })
+    return $ descs { other_ = other_ descs . (:) (w, s) }
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id) s
+getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id id) s
   where
-    reduceDesc (Descriptors_ a b c d e f g) = Descriptors (a []) (b []) (c []) (d []) (e []) (f []) (g [])
+    reduceDesc (Descriptors_ a ee b c d e f g) = 
+        Descriptors (a []) (reduceExtendedEvent $ ee []) (b []) (c []) (d []) (e []) (f []) (g [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do
             idesc <- getWord8
-            getDescriptor idesc descs >>= \(l, descs') -> go descs' (len - fromIntegral l)
+            len'  <- getWord8
+            getDescriptor idesc len' descs >>= \descs' -> go descs' (len - fromIntegral len' - 2)
