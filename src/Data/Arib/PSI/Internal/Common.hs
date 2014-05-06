@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Data.Arib.PSI.Internal.Common where
 
@@ -97,3 +98,7 @@ instance PSI L.ByteString where
 
 class Pretty a where
   pretty :: a -> String
+
+class FromBinary a where
+  type BinaryRep a
+  fromBinary :: BinaryRep a -> a
