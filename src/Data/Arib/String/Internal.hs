@@ -131,8 +131,8 @@ applyGetChar ptr w = gets ptr >>= \case
     GetChar1 f -> tell (f $ clearBit w 7)
     GetChar2 f -> await_ >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
     Macro      -> do
-        macro <- maybe L.empty id . M.lookup (clearBit w 7) <$> gets macros
-        debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro)) CB.sourceLbs macro $$ process
+        macro <- maybe S.empty id . M.lookup (clearBit w 7) <$> gets macros
+        debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro)) leftover macro
 
 localState :: MonadState s m => (s -> s) -> m a -> m a
 localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
