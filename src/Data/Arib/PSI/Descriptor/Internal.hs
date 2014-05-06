@@ -130,6 +130,8 @@ data Descriptors
         , streamId           :: [StreamId]
         -- | 0x54
         , content            :: [Content]
+        -- | 0xC4
+        , audioComponent     :: [AudioComponent]
         -- | 0xC8
         , videoDecodeControl :: [VideoDecodeControl]
         -- | 0xD6
@@ -144,6 +146,7 @@ data Descriptors_
         , component_          :: [Component]                     -> [Component]
         , streamId_           :: [StreamId]                      -> [StreamId]
         , content_            :: [Content]                       -> [Content]
+        , audioComponent_     :: [AudioComponent]                -> [AudioComponent]
         , videoDecodeControl_ :: [VideoDecodeControl]            -> [VideoDecodeControl]
         , eventGroup_         :: [EventGroup]                    -> [EventGroup]
         , other_              :: [(Word8, L.ByteString)]         -> [(Word8, L.ByteString)]
@@ -195,6 +198,28 @@ getDescriptor 0x54 _ descs = do
     un    <- getWord8
     return $ descs { content_ = content_ descs . (Content genre un:) }
 
+getDescriptor 0xC4 len descs = do
+    cty <- skip 1 >> fromBinary <$> getWord8
+    ctg <- ComponentTag <$> getWord8
+    sty <- fromBinary <$> getWord8
+    sc  <- getWord8 >>= \w -> return (if w == 0xFF then Nothing else Just w)
+    fs  <- getWord8
+    let ml = if cty == DualMono then testBit fs 7 else False
+        mc = testBit fs 6
+        qi = shiftR fs 4 .&. 0x3
+        sr = case shiftR fs 1 .&. 0x7 of
+                1 -> 16000
+                2 -> 22050
+                3 -> 24000
+                5 -> 32000
+                6 -> 44100
+                7 -> 48000
+                _ -> 0
+    l1  <- getByteString 3
+    l2  <- if ml then Just <$> getByteString 3 else return Nothing
+    d   <- toText =<< getLazyByteString (fromIntegral len - 11 - if ml then 3 else 0)
+    return $ descs { audioComponent_ = audioComponent_ descs . (:) (AudioComponent cty ctg sty sc ml mc qi sr l1 l2 d) }
+
 getDescriptor 0xC8 _ descs = getWord8 >>= \w -> 
     return $ descs { videoDecodeControl_ = videoDecodeControl_ descs . (fromBinary w:) }
 
@@ -209,10 +234,10 @@ getDescriptor w    len descs = do
     return $ descs { other_ = other_ descs . (:) (w, s) }
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id id) s
+getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id id id) s
   where
-    reduceDesc (Descriptors_ a ee b c d e f g) = 
-        Descriptors (a []) (reduceExtendedEvent $ ee []) (b []) (c []) (d []) (e []) (f []) (g [])
+    reduceDesc (Descriptors_ a ee b c d e f g h) = 
+        Descriptors (a []) (reduceExtendedEvent $ ee []) (b []) (c []) (d []) (e []) (f []) (g []) (h [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do

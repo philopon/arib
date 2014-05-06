@@ -3,6 +3,8 @@ module Data.Arib.PSI.Descriptor
     -- * Descriptors
     -- ** short event descriptor(0x4D)
     , ShortEvent(..)
+    -- ** extended event descriptor(0x4E)
+    , ExtendedEvent(..)
     -- ** component descriptor (0x50)
     , module Data.Arib.PSI.Descriptor.Component
     -- ** stream id descriptor(0x52) 
