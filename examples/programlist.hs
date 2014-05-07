@@ -7,6 +7,7 @@ import Control.Monad.Trans.Resource
 import qualified Data.Conduit.List as CL
 import System.Environment
 import Data.Maybe
+import Numeric
 
 import Data.Arib
 
@@ -15,7 +16,7 @@ printPMT program pid p = putStrLn . unlines $
     (show program ++ "(pid:" ++ show pid ++ ")") :
     map (\s ->
         let d = streamDescriptors s
-        in "  elementalyPID=" ++ show (elementalyPID s) ++
+        in "  elementalyPID=0x" ++ showHex (elementalyPID s)
            ", type=" ++ show (streamType s) ++
            (maybe "" (\(ComponentTag i) -> ", streamId=" ++ show i) . listToMaybe $ streamId d) ++
            (maybe "" (\v -> ", resolution=" ++ (pretty . videoEncodeFormat) v) . listToMaybe $ videoDecodeControl d)
