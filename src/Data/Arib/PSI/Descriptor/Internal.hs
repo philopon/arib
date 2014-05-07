@@ -39,14 +39,31 @@ data ShortEvent = ShortEvent
 
 --------------------------------------------------------------------------------
 
-data ExtendedEvent = ExtendedEvent
+data ExtendedEvent a = ExtendedEvent
     { extendedEventLanguage :: {-# UNPACK #-}!S.ByteString
-    , extendedEventItems    :: [(TL.Text, TL.Text)]
-    , extendedEventText     :: TL.Text
+    , extendedEventItems    :: [(TL.Text, a)]
+    , extendedEventText     :: a
     } deriving (Show, Read, Eq, Ord, Typeable)
 
-reduceExtendedEvent :: [(Word8, Word8, ExtendedEvent)] -> [ExtendedEvent]
+reduceExtendedEvent :: Monad m => [(Word8, Word8, ExtendedEvent L.ByteString)] -> m [ExtendedEvent TL.Text]
 reduceExtendedEvent = go "" [] "" 0 . dropWhile (\(w,_,_) -> w /= 0)
+  where
+    go _ _ _ _ [] = return []
+    go lng is ts m ((n,ln,ExtendedEvent l i t):es)
+        | m == n && n == ln = do
+            items <- mapM (\(a,b) -> (a,) `liftM` toText b) . concatItem $ is ++ i
+            text  <- toText $ ts `L.append` t
+            (ExtendedEvent l items text :) `liftM` go l [] "" 0 es
+        | m == n            = go l (is ++ i) (ts `L.append` t) (succ m) es
+        | otherwise         = go lng is ts m es
+    concatItem []  = []
+    concatItem [a] = [a]
+    concatItem ((at,ab):(bt,bb):is)
+        | TL.null bt = concatItem $ (at,ab `L.append` bb):is
+        | otherwise  = (at,ab) : concatItem ((bt,bb):is)
+
+reduceExtendedEvent' :: [(Word8, Word8, ExtendedEvent TL.Text)] -> [ExtendedEvent TL.Text]
+reduceExtendedEvent' = go "" [] "" 0 . dropWhile (\(w,_,_) -> w /= 0)
   where
     go _ _ _ _ [] = []
     go lng is ts m ((n,ln,ExtendedEvent l i t):es)
@@ -58,6 +75,7 @@ reduceExtendedEvent = go "" [] "" 0 . dropWhile (\(w,_,_) -> w /= 0)
     concatItem ((at,ab):(bt,bb):is)
         | TL.null bt = concatItem $ (at,ab `TL.append` bb):is
         | otherwise  = (at,ab) : concatItem ((bt,bb):is)
+
 
 --------------------------------------------------------------------------------
 
@@ -123,7 +141,7 @@ data Descriptors
         -- | 0x4D
           shortEvent         :: [ShortEvent]
         -- | 0x4E
-        , extendedEvent      :: [ExtendedEvent]
+        , extendedEvent      :: [ExtendedEvent TL.Text]
         -- | 0x50
         , component          :: [Component]
         -- | 0x52
@@ -142,7 +160,8 @@ data Descriptors
 data Descriptors_ 
     = Descriptors_
         { shortEvent_         :: [ShortEvent]                    -> [ShortEvent]
-        , extendedEvent_      :: [(Word8, Word8, ExtendedEvent)] -> [(Word8, Word8, ExtendedEvent)]
+        , extendedEvent_      :: [(Word8, Word8, ExtendedEvent L.ByteString)]
+                              -> [(Word8, Word8, ExtendedEvent L.ByteString)]
         , component_          :: [Component]                     -> [Component]
         , streamId_           :: [StreamId]                      -> [StreamId]
         , content_            :: [Content]                       -> [Content]
@@ -170,7 +189,7 @@ getDescriptor 0x4E _ descs = do
     loi       <- fromIntegral <$> getWord8
     is        <- reverse <$> getItems loi
     tl        <- fromIntegral <$> getWord8
-    t         <- toText =<< getLazyByteString tl
+    t         <- getLazyByteString tl
     return $ descs { extendedEvent_ = extendedEvent_ descs . (:) (dn, ldn, ExtendedEvent lang is t) }
   where
     getItems len
@@ -179,7 +198,7 @@ getDescriptor 0x4E _ descs = do
             idl  <- fromIntegral <$> getWord8
             idsc <- toText =<< getLazyByteString idl
             il   <- fromIntegral <$> getWord8
-            i    <- toText =<< getLazyByteString il
+            i    <- getLazyByteString il
             (:) (idsc, i) <$> getItems (len - idl - il - 2)
 
 getDescriptor 0x50 len descs = do
@@ -234,10 +253,11 @@ getDescriptor w    len descs = do
     return $ descs { other_ = other_ descs . (:) (w, s) }
 
 getDescriptors :: Int -> Get Descriptors
-getDescriptors s = reduceDesc <$> go (Descriptors_ id id id id id id id id id) s
+getDescriptors s = reduceDesc =<< go (Descriptors_ id id id id id id id id id) s
   where
-    reduceDesc (Descriptors_ a ee b c d e f g h) = 
-        Descriptors (a []) (reduceExtendedEvent $ ee []) (b []) (c []) (d []) (e []) (f []) (g []) (h [])
+    reduceDesc (Descriptors_ a ee b c d e f g h) = do
+        ee' <- reduceExtendedEvent $ ee []
+        return $ Descriptors (a []) ee' (b []) (c []) (d []) (e []) (f []) (g []) (h [])
     go descs len
         | len <= 0  = return descs
         | otherwise = do
