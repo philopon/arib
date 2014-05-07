@@ -7,11 +7,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Data.Arib.String.Internal where
 
 import Control.Applicative
-import Control.Monad.RWS.Strict
+import Control.Monad.RWS.Strict hiding (modify)
 import Control.Monad.Error
 import Control.Exception
 import Control.Monad.ST
@@ -130,11 +131,14 @@ instance Monoid o => MonadWriter o (StrM o) where
     pass m        = StrM $ \r s c -> unStrM m r s (\(a,f) w -> c a (f w))
 
 instance Monoid o => MonadState (AribState o) (StrM o) where
-    get   = StrM $ \_ ref c -> readSTRef   ref >>= \st -> c st mempty
-    put s = StrM $ \_ ref c -> writeSTRef  ref s >> c () mempty
-    state f = StrM $ \_ ref c -> readSTRef ref >>= \st -> 
+    get     = StrM   $ \_ ref c -> readSTRef  ref   >>= \st -> c st mempty
+    put  !s = StrM   $ \_ ref c -> writeSTRef ref s >>         c () mempty
+    state f = StrM   $ \_ ref c -> readSTRef  ref   >>= \st -> 
         let (a,st') = f st
         in writeSTRef ref st' >> c a mempty
+
+modify' :: (AribState B.Builder -> AribState B.Builder) -> StringM ()
+modify' f = lift $ StrM $ \_ ref c -> modifySTRef' ref f >> c () mempty
 
 instance Monoid o => MonadError AribStringException (StrM o) where
     throwError e = StrM $ \_ _ _ -> return $ Left e
@@ -149,36 +153,36 @@ type StringM a = Consumer S.ByteString (StrM B.Builder) a
 
 processEscape' :: [Word8] -> StringM (Either Word8 a) -> (a -> AribState B.Builder -> AribState B.Builder) -> Word8 -> StringM ()
 processEscape' ws awit field 0x20 = awit >>=
-    either (\w -> throwError . UnknownEscapeSequence $ ws ++ [0x20,w]) (modify . field)
+    either (\w -> throwError . UnknownEscapeSequence $ ws ++ [0x20,w]) (modify' . field)
 processEscape' ws _ _ w = throwError . UnknownEscapeSequence $ ws ++ [w]
 
 processEscape :: Word8 -> StringM ()
-processEscape 0x6E = debug "LS2"  modify $ glTo g2 -- LS2
-processEscape 0x6F = debug "LS3"  modify $ glTo g3 -- LS3
-processEscape 0x7E = debug "LS1R" modify $ grTo g1 -- LS1R
-processEscape 0x7D = debug "LS2R" modify $ grTo g2 -- LS2R
-processEscape 0x7C = debug "LS3R" modify $ grTo g3 -- LS3R
+processEscape 0x6E = debug "LS2"  modify' $ glTo g2 -- LS2
+processEscape 0x6F = debug "LS3"  modify' $ glTo g3 -- LS3
+processEscape 0x7E = debug "LS1R" modify' $ grTo g1 -- LS1R
+processEscape 0x7D = debug "LS2R" modify' $ grTo g2 -- LS2R
+processEscape 0x7C = debug "LS3R" modify' $ grTo g3 -- LS3R
 
-processEscape 0x28 = awaitGSet1 >>= either (processEscape' [0x28] awaitDRCS1 g0To) (debug "G0 ->" modify . g0To)
-processEscape 0x29 = awaitGSet1 >>= either (processEscape' [0x29] awaitDRCS1 g1To) (debug "G1 ->" modify . g1To)
-processEscape 0x2A = awaitGSet1 >>= either (processEscape' [0x2A] awaitDRCS1 g2To) (debug "G2 ->" modify . g2To)
-processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3To) (debug "G3 ->" modify . g3To)
+processEscape 0x28 = awaitGSet1 >>= either (processEscape' [0x28] awaitDRCS1 g0To) (debug "G0 ->" modify' . g0To)
+processEscape 0x29 = awaitGSet1 >>= either (processEscape' [0x29] awaitDRCS1 g1To) (debug "G1 ->" modify' . g1To)
+processEscape 0x2A = awaitGSet1 >>= either (processEscape' [0x2A] awaitDRCS1 g2To) (debug "G2 ->" modify' . g2To)
+processEscape 0x2B = awaitGSet1 >>= either (processEscape' [0x2B] awaitDRCS1 g3To) (debug "G3 ->" modify' . g3To)
 
-processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify . g0To)
+processEscape 0x24 = awaitGSet2 >>= either notG0Process (debug "G0 ->" modify' . g0To)
   where
     notG0Process 0x28 = await_     >>=         processEscape' [0x24,0x28] awaitDRCS2 g0To
-    notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (debug "G1 -> " modify . g1To)
-    notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (debug "G2 -> " modify . g2To)
-    notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (debug "G3 -> " modify . g3To)
+    notG0Process 0x29 = awaitGSet2 >>= either (processEscape' [0x24,0x29] awaitDRCS2 g1To) (debug "G1 -> " modify' . g1To)
+    notG0Process 0x2A = awaitGSet2 >>= either (processEscape' [0x24,0x2A] awaitDRCS2 g2To) (debug "G2 -> " modify' . g2To)
+    notG0Process 0x2B = awaitGSet2 >>= either (processEscape' [0x24,0x2B] awaitDRCS2 g3To) (debug "G3 -> " modify' . g3To)
     notG0Process w    = throwError $ UnknownEscapeSequence [0x24,w]
 
 processEscape w = throwError $ UnknownEscapeSequence [w]
 
 applyGetChar ::(AribState B.Builder -> GetChar B.Builder) -> Word8 -> StringM ()
-applyGetChar ptr w = gets ptr >>= \case
-    GetChar1 f -> tell (f $ clearBit w 7)
-    GetChar2 f -> await_ >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
-    Macro      -> do
+applyGetChar ptr w = {-# SCC "applyGetChar" #-} gets ptr >>= \case
+    GetChar1 f -> {-# SCC "applyGetChar[GetChar1]" #-} tell (f $ clearBit w 7)
+    GetChar2 f -> {-# SCC "applyGetChar[GetChar2]" #-} await_ >>= \x -> tell $ f (clearBit w 7) (clearBit x 7)
+    Macro      -> {-# SCC "applyGetChar[Macro]" #-} do
         macro <- maybe S.empty id . M.lookup (clearBit w 7) <$> gets macros
         debug ("Macro" ++ showHex (clearBit w 7) (' ': show macro)) leftover macro
 
@@ -188,11 +192,11 @@ localState f m = get >>= \st -> put (f st) >> m >>= \r -> put st >> return r
 
 -- TODO: Macro, CSI
 processC :: Word8 -> StringM ()
-processC 0x0F = modify (glTo g0) >> process         -- LS0
-processC 0x0E = modify (glTo g1) >> process         -- LS1
+processC 0x0F = modify' (glTo g0)        >> process -- LS0
+processC 0x0E = modify' (glTo g1)        >> process -- LS1
 processC 0x1B = await_ >>= processEscape >> process -- ESC
-processC 0x19 = localState (glTo g2) process        -- SS2
-processC 0x1D = localState (glTo g3) process        -- SS3
+processC 0x19 = localState (glTo g2)        process -- SS2
+processC 0x1D = localState (glTo g3)        process -- SS3
 processC w
     | w `elem` just1  = asks control <*> pure Control <*> pure w <*> ((:[]) <$> await_) >>= tell
     | w `elem` just2  = asks control <*> pure Control <*> pure w <*> (L.unpack <$> CB.take 2) >>= tell
