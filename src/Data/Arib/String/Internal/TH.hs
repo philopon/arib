@@ -1,15 +1,26 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.Arib.String.Internal.TH where
 
 import Numeric
 import Language.Haskell.TH
 import Control.Applicative
+import Control.Arrow(first)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
 import qualified Data.ByteString as S
+import qualified Data.Vector.Storable as VS
+import Data.Text.Encoding 
+import Data.List
+import Foreign.Storable
+import Data.Bits
+import Data.Word
+
+import Data.Text.Internal.Unsafe(inlinePerformIO)
+import Foreign.ForeignPtr
+import GHC.Ptr (Ptr(..))
 
 splitOn :: (a -> Bool) -> [a] -> [[a]]
 splitOn sep list = case break sep list of
@@ -27,30 +38,46 @@ readCharset = IM.fromList . map readDatum . lines
 
 data Dict = 
     Dict { elemLength :: {-#UNPACK#-}!Int
-         , body       :: {-#UNPACK#-}!S.ByteString
+         , body       :: {-#UNPACK#-}!(VS.Vector Word16)
          } deriving Show
 
-mkCharset1 :: (T.Text -> String) -> FilePath -> ExpQ
-mkCharset1 conv file = do
-    dict <- runIO $ IM.map conv . readCharset <$> readFile file
-    let maxLen = maximum . map (length . snd) $ IM.toList dict
-        bdy    = foldr (\point b -> case IM.lookup point dict of
-            Nothing -> pad (maxLen + 1) ++ b
-            Just t  -> let l = length t
-                       in (toEnum l : t ++ pad (maxLen - l)) ++ b
-            ) [] [0x21 .. 0x7E]
-    [|Dict $(litE . integerL . fromIntegral $ maxLen + 1) $(stringE bdy) |]
-  where pad l = replicate (fromIntegral l) '\0'
+newtype Simple = Simple Dict deriving Show
 
-mkCharset2 :: (T.Text -> String) -> FilePath -> ExpQ
-mkCharset2 conv file = do
-    dict <- runIO $ IM.map conv . readCharset <$> readFile file
-    let maxLen = maximum . map (length . snd) $ IM.toList dict
-        bdy    = foldr (\(sec,point) b -> case IM.lookup (0x100 * sec + point) dict of
-            Nothing -> pad (maxLen + 1) ++ b
-            Just t  -> let l = length t
-                       in (toEnum l : t ++ pad (maxLen - l)) ++ b
-            ) [] [(sec, point) | sec <- [0x21 .. 0x7E], point <- [0x21 .. 0x7E]]
-    [|Dict $(litE . integerL . fromIntegral $ maxLen + 1) $(stringE bdy) |]
-  where pad l = replicate (fromIntegral l) '\0'
+toWord16s :: T.Text -> [Word16]
+toWord16s t = unfoldr (\b -> case first S.unpack $ S.splitAt 2 b of
+    ([x,y], b') -> Just (shiftL (fromIntegral x) 8 .|. fromIntegral y :: Word16, b')
+    _           -> Nothing
+    ) $ encodeUtf16BE t
 
+charset' :: [Int] -> FilePath -> IO (Bool, Int, [Word16])
+charset' range file = do
+    dict <- IM.map toWord16s . readCharset <$> readFile file
+    let maxLen = maximum . map (length . snd) $ IM.toList dict
+        minLen = minimum . map (length . snd) $ IM.toList dict
+        simple = maxLen == minLen
+        eLen   = if simple then maxLen else maxLen + 1
+        elems  = foldr (\point b -> case IM.lookup point dict of
+            Nothing -> replicate eLen 0 ++ b
+            Just t  -> take      eLen ((if simple then t else fromIntegral (length t) : t) ++ repeat 0) ++ b
+            ) [] range
+    return (simple, eLen, elems)
+
+charset1 :: FilePath -> IO (Bool, Int, [Word16])
+charset1 = charset' [0x21 .. 0x7E]
+
+charset2 :: FilePath -> IO (Bool, Int, [Word16])
+charset2 = charset' [sec * 0x100 + point | sec <- [0x21 .. 0x7E], point <- [0x21 .. 0x7E]]
+
+toStorableVectorIR :: forall a. Storable a => [a] -> IO [Word8]
+toStorableVectorIR l = VS.unsafeWith (VS.fromList l) $ \p ->
+    mapM (peekByteOff p) [ 0 .. length l * sizeOf (undefined :: a) - 1]
+
+mkCharset :: (FilePath -> IO (Bool, Int, [Word16])) -> FilePath -> Q Exp
+mkCharset charset file = do
+    (simple, maxLen, v) <- runIO $ charset file
+    ir                  <- runIO $ toStorableVectorIR v
+    [|$(if simple then [|Simple|] else [|id|]) $ Dict
+        $(litE . integerL $ fromIntegral maxLen)
+        (VS.unsafeFromForeignPtr0
+            (inlinePerformIO . newForeignPtr_ $ Ptr $(litE $ StringPrimL ir)) 
+            $(litE . integerL . fromIntegral $ length v)) |]

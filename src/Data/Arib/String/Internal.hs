@@ -24,11 +24,10 @@ import Data.Typeable
 import Data.Word
 import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Builder as B
+import qualified Data.Text.Lazy.Builder as B
 import qualified Data.Map.Strict as M
 
-import qualified Data.Text.Lazy          as T
-import qualified Data.Text.Lazy.Encoding as T
+import qualified Data.Text.Lazy          as TL
 
 import Data.Conduit
 import qualified Data.Conduit.Binary as CB
@@ -221,10 +220,7 @@ process = CB.head >>= \case
     Nothing -> return ()
     Just a  -> {-# SCC "process'" #-} process' a >> process
 
--- | decode arib string to utf8 encoded bytestring.  
-decodeUtf8 :: L.ByteString -> Either AribStringException L.ByteString
-decodeUtf8 str = fmap B.toLazyByteString $
-    runStrM utf8Config (CB.sourceLbs str $$ process)
+decodeText :: L.ByteString -> Either AribStringException TL.Text
+decodeText str = fmap B.toLazyText $
+    runStrM textConfig (CB.sourceLbs str $$ process)
 
-decodeText :: L.ByteString -> Either AribStringException T.Text
-decodeText = fmap T.decodeUtf8 . decodeUtf8
